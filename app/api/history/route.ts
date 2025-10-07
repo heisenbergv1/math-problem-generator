@@ -17,7 +17,13 @@ export async function GET(req: NextRequest) {
         problem_text,
         correct_answer,
         difficulty,
-        math_problem_submissions ( id, created_at, user_answer, is_correct, feedback_text )
+        submissions:math_problem_submissions (
+          id,
+          created_at,
+          user_answer,
+          is_correct,
+          feedback_text
+        )
       `)
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -27,22 +33,29 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
 
     const items = (data ?? []).map((row: any) => {
-      const latest = Array.isArray(row.math_problem_submissions) && row.math_problem_submissions.length
-        ? row.math_problem_submissions[0]
-        : null;
+      const subs = Array.isArray(row.submissions) ? row.submissions : [];
+      const latest = subs.length ? subs[0] : null;
+
       return {
         id: row.id,
         created_at: row.created_at,
         difficulty: row.difficulty ?? 'Medium',
         problem_text: row.problem_text,
-        has_submission: !!latest,
+        has_submission: subs.length > 0,
         last_submission: latest && {
           id: latest.id,
           created_at: latest.created_at,
           user_answer: latest.user_answer,
           is_correct: latest.is_correct,
           feedback_text: latest.feedback_text
-        }
+        },
+        submissions: subs.map((s: any) => ({
+          id: s.id,
+          created_at: s.created_at,
+          user_answer: s.user_answer,
+          is_correct: s.is_correct,
+          feedback_text: s.feedback_text
+        }))
       };
     });
 

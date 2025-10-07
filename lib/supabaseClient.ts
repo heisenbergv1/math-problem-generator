@@ -61,6 +61,26 @@ export type Database = {
           feedback_text?: string
         }
       }
+      math_problem_hints: {
+        Row: {
+          id: string
+          session_id: string
+          hint_text: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          session_id: string
+          hint_text: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          session_id?: string
+          hint_text?: string
+          created_at?: string
+        }
+      }
     }
   }
 }

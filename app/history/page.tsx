@@ -1,5 +1,13 @@
 import Link from 'next/link';
 
+type Submission = {
+  id: string;
+  created_at: string;
+  user_answer: number;
+  is_correct: boolean;
+  feedback_text: string;
+};
+
 type HistoryItem = {
   id: string;
   created_at: string;
@@ -13,6 +21,7 @@ type HistoryItem = {
     is_correct: boolean;
     feedback_text: string;
   } | null;
+  submissions?: Submission[];
 };
 
 async function getHistory() {
@@ -35,8 +44,8 @@ export default async function HistoryPage() {
   const items = await getHistory();
 
   return (
-    <main className="min-h-dvh bg-gray-50">
-      <div className="mx-auto max-w-3xl px-4 py-8">
+    <main className="min-h-dvh bg-gradient-to-b from-blue-50 to-indigo-50">
+      <div className="mx-auto max-w-4xl px-4 py-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Problem History</h1>
           <Link
@@ -88,6 +97,40 @@ export default async function HistoryPage() {
                       Answer: <strong>{it.last_submission.user_answer}</strong> · {new Date(it.last_submission.created_at).toLocaleString()}
                     </div>
                     {it.last_submission.feedback_text}
+                  </div>
+                </details>
+              )}
+
+              {(it.submissions?.length ?? 0) > 0 && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-sm text-gray-700 hover:underline">
+                    View all attempts ({it.submissions?.length})
+                  </summary>
+                  <div className="mt-2 overflow-hidden rounded-md border">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2 text-left w-48">When</th>
+                          <th className="px-3 py-2 text-left">Answer</th>
+                          <th className="px-3 py-2 text-left">Result</th>
+                          <th className="px-3 py-2 text-left">Feedback</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {it.submissions!.map((s) => (
+                          <tr key={s.id} className="border-t">
+                            <td className="px-3 py-2">{new Date(s.created_at).toLocaleString()}</td>
+                            <td className="px-3 py-2">{s.user_answer}</td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {s.is_correct ? 'Correct' : 'Incorrect'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-700 whitespace-pre-wrap">{s.feedback_text}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </details>
               )}

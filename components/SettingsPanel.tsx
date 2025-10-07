@@ -1,4 +1,5 @@
 import React from 'react'
+import Link from 'next/link';
 import { BrainIcon, HistoryIcon } from 'lucide-react'
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
@@ -21,7 +22,10 @@ export function SettingsPanel({
   isLoading,
 }: SettingsPanelProps) {
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6 mb-6 space-y-4 border border-indigo-100">
+    <div className="bg-white rounded-lg shadow-lg p-6 space-y-4 border border-indigo-100 h-full">
+      <h2 className="text-lg font-semibold text-gray-800 mb-2">
+        Problem Settings
+      </h2>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Difficulty
@@ -52,22 +56,23 @@ export function SettingsPanel({
           <option value="mixed">Mixed</option>
         </select>
       </div>
-      <div className="flex gap-3 pt-2">
+      <div className="flex flex-col gap-3 pt-2">
         <button
           onClick={generateProblem}
           disabled={isLoading}
-          className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out flex items-center justify-center gap-2"
+          className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out flex items-center justify-center gap-2"
         >
           <BrainIcon size={18} />
           {isLoading ? 'Generating...' : 'Generate New Problem'}
         </button>
-        <a
+        <Link
           href="/history"
           className="rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+          prefetch
         >
           <HistoryIcon size={18} />
           History
-        </a>
+        </Link>
       </div>
     </div>
   )
