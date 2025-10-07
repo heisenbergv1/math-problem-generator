@@ -19,6 +19,7 @@ export type Database = {
           problem_text: string
           correct_answer: number
           difficulty: 'Easy' | 'Medium' | 'Hard'
+          problem_type: 'addition' | 'subtraction' | 'multiplication' | 'division' | 'mixed'
         }
         Insert: {
           id?: string
@@ -26,6 +27,7 @@ export type Database = {
           problem_text: string
           correct_answer: number
           difficulty?: 'Easy' | 'Medium' | 'Hard'
+          problem_type?: 'addition' | 'subtraction' | 'multiplication' | 'division' | 'mixed'
         }
         Update: {
           id?: string
@@ -33,6 +35,7 @@ export type Database = {
           problem_text?: string
           correct_answer?: number
           difficulty?: 'Easy' | 'Medium' | 'Hard'
+          problem_type?: 'addition' | 'subtraction' | 'multiplication' | 'division' | 'mixed'
         }
       }
       math_problem_submissions: {

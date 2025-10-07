@@ -150,11 +150,9 @@ If you have time, consider adding:
 
 - [x] Difficulty levels (Easy/Medium/Hard)
 - [x] Problem history view
-- [ ] Score tracking
-- [ ] Different problem types (addition, subtraction, multiplication, division)
+- [x] Score tracking
+- [x] Different problem types (addition, subtraction, multiplication, division)
 - [ ] Hints system
 - [ ] Step-by-step solution explanations
 
 ---
-
-Good luck with your assessment! 🎯

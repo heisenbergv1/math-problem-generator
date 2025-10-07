@@ -10,6 +10,7 @@ interface MathProblem {
 }
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard'
+type ProblemType = 'addition' | 'subtraction' | 'multiplication' | 'division' | 'mixed'
 
 type Score = {
   client_id: string
@@ -29,10 +30,10 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium')
+  const [problemType, setProblemType] = useState<ProblemType>('addition')
   const [score, setScore] = useState<Score>(null)
 
   useEffect(() => {
-    // optional: show score on first load
     fetch('/api/score', { cache: 'no-store' })
       .then(r => r.json())
       .then(j => setScore(j.score ?? null))
@@ -48,7 +49,7 @@ export default function Home() {
       const res = await fetch('/api/math-problem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty })
+        body: JSON.stringify({ difficulty, problem_type: problemType })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to generate problem')
@@ -82,7 +83,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || 'Failed to submit answer')
       setIsCorrect(Boolean(data.is_correct))
       setFeedback(String(data.feedback ?? ''))
-      if (data.score) setScore(data.score) // ✅ update score from server
+      if (data.score) setScore(data.score)
     } catch (err: any) {
       setIsCorrect(false)
       setFeedback(err.message ?? 'Something went wrong while submitting.')
@@ -136,6 +137,23 @@ export default function Home() {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Problem Type
+            </label>
+            <select
+              value={problemType}
+              onChange={(e) => setProblemType(e.target.value as ProblemType)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="addition">Addition</option>
+              <option value="subtraction">Subtraction</option>
+              <option value="multiplication">Multiplication</option>
+              <option value="division">Division</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </div>
+
           <div className="flex gap-3">
             <button
               onClick={generateProblem}
@@ -156,7 +174,7 @@ export default function Home() {
         {problem && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <h2 className="text-xl font-semibold mb-2 text-gray-700">Problem:</h2>
-            <p className="text-sm text-gray-500 mb-2">Difficulty: {difficulty}</p>
+            <p className="text-sm text-gray-500 mb-2">Difficulty: {difficulty} • Type: {problemType}</p>
             <p className="text-lg text-gray-800 leading-relaxed mb-6">
               {problem.problem_text}
             </p>
