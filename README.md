@@ -1,4 +1,4 @@
-# Math Problem Generator - Developer Assessment Starter Kit
+# Math Problem Generator
 
 ## Overview
 

@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 interface MathProblem {
   problem_text: string
-  final_answer: number
+  final_answer?: number // server doesn't return this; keep optional for template compatibility
 }
 
 export default function Home() {
@@ -16,16 +16,54 @@ export default function Home() {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
 
   const generateProblem = async () => {
-    // TODO: Implement problem generation logic
-    // This should call your API route to generate a new problem
-    // and save it to the database
+    setIsLoading(true)
+    setFeedback('')
+    setIsCorrect(null)
+    setUserAnswer('')
+    try {
+      const res = await fetch('/api/math-problem', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to generate problem')
+
+      // API returns: { session_id, problem_text }
+      setSessionId(data.session_id)
+      setProblem({ problem_text: data.problem_text })
+    } catch (err: any) {
+      setFeedback(err.message ?? 'Something went wrong while generating.')
+      setIsCorrect(false)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const submitAnswer = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement answer submission logic
-    // This should call your API route to check the answer,
-    // save the submission, and generate feedback
+    if (!sessionId) return
+
+    setIsLoading(true)
+    setFeedback('')
+    setIsCorrect(null)
+    try {
+      const res = await fetch('/api/math-problem/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_answer: Number(userAnswer)
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to submit answer')
+
+      // API returns: { submission_id, is_correct, feedback }
+      setIsCorrect(Boolean(data.is_correct))
+      setFeedback(String(data.feedback ?? ''))
+    } catch (err: any) {
+      setIsCorrect(false)
+      setFeedback(err.message ?? 'Something went wrong while submitting.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -73,7 +111,7 @@ export default function Home() {
                 disabled={!userAnswer || isLoading}
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
               >
-                Submit Answer
+                {isLoading ? 'Checking…' : 'Submit Answer'}
               </button>
             </form>
           </div>
@@ -84,7 +122,7 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-4 text-gray-700">
               {isCorrect ? '✅ Correct!' : '❌ Not quite right'}
             </h2>
-            <p className="text-gray-800 leading-relaxed">{feedback}</p>
+            <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{feedback}</p>
           </div>
         )}
       </main>
