@@ -3,6 +3,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ScoreDisplay } from '@/components/ScoreDisplay'
+import { ProblemDisplay } from '@/components/ProblemDisplay'
+import { FeedbackDisplay } from '@/components/FeedbackDisplay'
+import { SettingsPanel } from '@/components/SettingsPanel'
+import { TrophyIcon, BookOpenIcon } from 'lucide-react'
 
 interface MathProblem {
   problem_text: string
@@ -93,127 +98,53 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-50">
       <main className="container mx-auto px-4 py-8 max-w-2xl">
 
-        {score && (
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-lg bg-white p-3 shadow-sm">
-              <div className="text-xs text-gray-500">Points</div>
-              <div className="text-xl font-bold">{score.points}</div>
-            </div>
-            <div className="rounded-lg bg-white p-3 shadow-sm">
-              <div className="text-xs text-gray-500">Accuracy</div>
-              <div className="text-xl font-bold">{score.accuracy}%</div>
-            </div>
-            <div className="rounded-lg bg-white p-3 shadow-sm">
-              <div className="text-xs text-gray-500">Streak</div>
-              <div className="text-xl font-bold">{score.current_streak}</div>
-            </div>
-            <div className="rounded-lg bg-white p-3 shadow-sm">
-              <div className="text-xs text-gray-500">Best</div>
-              <div className="text-xl font-bold">{score.best_streak}</div>
-            </div>
+        <header className="mb-8 text-center">
+          <div className="inline-block p-2 bg-indigo-600 text-white rounded-lg mb-4">
+            <TrophyIcon size={32} />
           </div>
-        )}
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">
+            Math Problem Generator
+          </h1>
+          <p className="text-gray-600">Challenge yourself with math problems!</p>
+        </header>
 
-        <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
-          Math Problem Generator
-        </h1>
+        {score && <ScoreDisplay score={score} />}
 
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Difficulty
-            </label>
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option>Easy</option>
-              <option>Medium</option>
-              <option>Hard</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Problem Type
-            </label>
-            <select
-              value={problemType}
-              onChange={(e) => setProblemType(e.target.value as ProblemType)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="addition">Addition</option>
-              <option value="subtraction">Subtraction</option>
-              <option value="multiplication">Multiplication</option>
-              <option value="division">Division</option>
-              <option value="mixed">Mixed</option>
-            </select>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={generateProblem}
-              disabled={isLoading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
-            >
-              {isLoading ? 'Generating...' : 'Generate New Problem'}
-            </button>
-            <a
-              href="/history"
-              className="rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              History
-            </a>
-          </div>
-        </div>
+        <SettingsPanel
+          difficulty={difficulty}
+          setDifficulty={setDifficulty}
+          problemType={problemType}
+          setProblemType={setProblemType}
+          generateProblem={generateProblem}
+          isLoading={isLoading}
+        />
 
         {problem && (
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-2 text-gray-700">Problem:</h2>
-            <p className="text-sm text-gray-500 mb-2">Difficulty: {difficulty} • Type: {problemType}</p>
-            <p className="text-lg text-gray-800 leading-relaxed mb-6">
-              {problem.problem_text}
-            </p>
-
-            <form onSubmit={submitAnswer} className="space-y-4">
-              <div>
-                <label htmlFor="answer" className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Answer:
-                </label>
-                <input
-                  type="number"
-                  id="answer"
-                  value={userAnswer}
-                  onChange={(e) => setUserAnswer(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your answer"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={!userAnswer || isLoading}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
-              >
-                {isLoading ? 'Checking…' : 'Submit Answer'}
-              </button>
-            </form>
-          </div>
+          <ProblemDisplay
+            problem={problem}
+            difficulty={difficulty}
+            problemType={problemType}
+            userAnswer={userAnswer}
+            setUserAnswer={setUserAnswer}
+            submitAnswer={submitAnswer}
+            isLoading={isLoading}
+          />
         )}
 
-        {feedback && (
-          <div className={`rounded-lg shadow-lg p-6 ${isCorrect ? 'bg-green-50 border-2 border-green-200' : 'bg-yellow-50 border-2 border-yellow-200'}`}>
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">
-              {isCorrect ? '✅ Correct!' : '❌ Not quite right'}
-            </h2>
-            <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{feedback}</p>
-          </div>
-        )}
+        {feedback && <FeedbackDisplay feedback={feedback} isCorrect={isCorrect} />}
+
+        <div className="mt-8 text-center">
+          <a
+            href="/history"
+            className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-medium"
+          >
+            <BookOpenIcon size={18} />
+            View Problem History
+          </a>
+        </div>
       </main>
     </div>
   )
