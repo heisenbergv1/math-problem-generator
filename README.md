@@ -148,8 +148,8 @@ When submitting your assessment, provide:
 
 If you have time, consider adding:
 
-- [ ] Difficulty levels (Easy/Medium/Hard)
-- [ ] Problem history view
+- [x] Difficulty levels (Easy/Medium/Hard)
+- [x] Problem history view
 - [ ] Score tracking
 - [ ] Different problem types (addition, subtraction, multiplication, division)
 - [ ] Hints system

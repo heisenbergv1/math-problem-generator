@@ -1,3 +1,5 @@
+// app/page.tsx
+
 'use client'
 
 import { useState } from 'react'
@@ -92,13 +94,21 @@ export default function Home() {
             </select>
           </div>
 
-          <button
-            onClick={generateProblem}
-            disabled={isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
-          >
-            {isLoading ? 'Generating...' : 'Generate New Problem'}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={generateProblem}
+              disabled={isLoading}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
+            >
+              {isLoading ? 'Generating...' : 'Generate New Problem'}
+            </button>
+            <a
+              href="/history"
+              className="rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              History
+            </a>
+          </div>
         </div>
 
         {problem && (
