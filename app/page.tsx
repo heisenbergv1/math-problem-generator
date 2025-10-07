@@ -4,8 +4,10 @@ import { useState } from 'react'
 
 interface MathProblem {
   problem_text: string
-  final_answer?: number // server doesn't return this; keep optional for template compatibility
+  final_answer?: number
 }
+
+type Difficulty = 'Easy' | 'Medium' | 'Hard'
 
 export default function Home() {
   const [problem, setProblem] = useState<MathProblem | null>(null)
@@ -14,6 +16,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
+  const [difficulty, setDifficulty] = useState<Difficulty>('Medium')
 
   const generateProblem = async () => {
     setIsLoading(true)
@@ -21,11 +24,14 @@ export default function Home() {
     setIsCorrect(null)
     setUserAnswer('')
     try {
-      const res = await fetch('/api/math-problem', { method: 'POST' })
+      const res = await fetch('/api/math-problem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ difficulty })
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to generate problem')
 
-      // API returns: { session_id, problem_text }
       setSessionId(data.session_id)
       setProblem({ problem_text: data.problem_text })
     } catch (err: any) {
@@ -39,7 +45,6 @@ export default function Home() {
   const submitAnswer = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!sessionId) return
-
     setIsLoading(true)
     setFeedback('')
     setIsCorrect(null)
@@ -54,8 +59,6 @@ export default function Home() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to submit answer')
-
-      // API returns: { submission_id, is_correct, feedback }
       setIsCorrect(Boolean(data.is_correct))
       setFeedback(String(data.feedback ?? ''))
     } catch (err: any) {
@@ -72,8 +75,23 @@ export default function Home() {
         <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
           Math Problem Generator
         </h1>
-        
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Difficulty
+            </label>
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value as Difficulty)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option>Easy</option>
+              <option>Medium</option>
+              <option>Hard</option>
+            </select>
+          </div>
+
           <button
             onClick={generateProblem}
             disabled={isLoading}
@@ -85,11 +103,12 @@ export default function Home() {
 
         {problem && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4 text-gray-700">Problem:</h2>
+            <h2 className="text-xl font-semibold mb-2 text-gray-700">Problem:</h2>
+            <p className="text-sm text-gray-500 mb-2">Difficulty: {difficulty}</p>
             <p className="text-lg text-gray-800 leading-relaxed mb-6">
               {problem.problem_text}
             </p>
-            
+
             <form onSubmit={submitAnswer} className="space-y-4">
               <div>
                 <label htmlFor="answer" className="block text-sm font-medium text-gray-700 mb-2">
@@ -105,7 +124,7 @@ export default function Home() {
                   required
                 />
               </div>
-              
+
               <button
                 type="submit"
                 disabled={!userAnswer || isLoading}
