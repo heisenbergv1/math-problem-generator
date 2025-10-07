@@ -37,7 +37,7 @@ export default function Home() {
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium')
   const [problemType, setProblemType] = useState<ProblemType>('addition')
   const [score, setScore] = useState<Score>(null)
-  const [hint, setHint] = useState<string>('')
+  const [hints, setHints] = useState<string[]>([])
   const [isHintLoading, setIsHintLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [modalMessage, setModalMessage] = useState('')
@@ -65,7 +65,7 @@ export default function Home() {
     setFeedback('')
     setIsCorrect(null)
     setUserAnswer('')
-    setHint('')
+    setHints([])
     try {
       const res = await fetch('/api/math-problem', {
         method: 'POST',
@@ -73,7 +73,8 @@ export default function Home() {
         body: JSON.stringify({ difficulty, problem_type: problemType })
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to generate problem')
+      // if (!res.ok) throw new Error(data.error || 'Something went wrong while generating.')
+      if (!res.ok) throw new Error('Something went wrong while generating. Please try again later.')
       setIsSubmitDisabled(false)
       setSessionId(data.session_id)
       setProblem({ problem_text: data.problem_text })
@@ -87,6 +88,7 @@ export default function Home() {
 
   const requestHint = async () => {
     if (!sessionId) return
+    if (hints.length >= 5) return
     setIsHintLoading(true)
     try {
       const res = await fetch('/api/math-problem/hint', {
@@ -99,9 +101,12 @@ export default function Home() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to get hint')
-      setHint(String(data.hint_text ?? ''))
+      const nextHints = [...hints, String(data.hint_text ?? '')]
+      setHints(nextHints.slice(0, 5))
+      if (data.score) setScore(data.score)
     } catch (e: any) {
-      setHint(e.message ?? 'Unable to get a hint right now.')
+      const nextHints = [...hints, e.message ?? 'Unable to get a hint right now.']
+      setHints(nextHints.slice(0, 5))
     } finally {
       setIsHintLoading(false)
     }
@@ -206,16 +211,18 @@ export default function Home() {
                     setIsSubmitDisabled(true)
                     setModalTitle('Solution Revealed')
                     setModalMessage('You revealed the solution steps. Submissions are disabled for this problem. Generate a new one to continue.')
-                    setShowModal(true)
+                    if (!isCorrect) setShowModal(true)
                   }}
                 />
 
-                <HintDisplay
-                  hint={hint}
-                  isHintLoading={isHintLoading}
-                  requestHint={requestHint}
-                  sessionId={sessionId}
-                />
+                {!isCorrect ?
+                  <HintDisplay
+                    hints={hints}
+                    isHintLoading={isHintLoading}
+                    requestHint={requestHint}
+                    sessionId={sessionId}
+                    maxHints={5}
+                  /> : null}
               </>
             ) : (
               <div className="bg-white rounded-lg shadow-lg p-8 border border-indigo-100 text-center flex flex-col items-center justify-center h-96">
@@ -226,7 +233,7 @@ export default function Home() {
                   No Problem Generated Yet
                 </h2>
                 <p className="text-gray-600">
-                  Use the settings panel to generate a new math problem.
+                  {feedback || 'Use the settings panel to generate a new math problem.'}
                 </p>
               </div>
             )}

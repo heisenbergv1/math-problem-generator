@@ -47,20 +47,41 @@ export async function POST(req: NextRequest) {
       ? 'The required operations may include addition, subtraction, multiplication, and division. Choose what fits naturally for the story.'
       : `The required operation used to solve must be ${problem_type}.`;
 
+    const p5TopicMenu = [
+      'Fractions: add/subtract/multiply simple fractions and mixed numbers (no calculator)',
+      'Percentage: find percentage part, discount or GST, or percentage increase/decrease',
+      'Rate: constant rate problems (distance–time, work, unit price)',
+      'Area of triangle or composite figures made of rectangles/squares/triangles',
+      'Volume of cube/cuboid or liquid in a rectangular tank with cm³/ℓ relations',
+      'Angles on a straight line/at a point/vertically opposite; properties of triangles',
+      'Special quadrilaterals: parallelogram, rhombus, trapezium (properties without extra constructions)',
+    ];
+
     const prompt = `
-      You are generating ONE Primary 5 (Grade 5) math WORD PROBLEM.
+      You are generating ONE Primary 5 (Grade 5) math WORD PROBLEM aligned to the Singapore 2021 Primary Mathematics Syllabus (P5 level).
+
       Difficulty: ${difficulty}
       Problem Type: ${problem_type}
+
+      Curriculum alignment:
+      - Select exactly one focus from this P5 topic menu and make it central to the solution:
+        - ${p5TopicMenu.join('\n  - ')}
+      - Emphasise age-appropriate numeracy and real-world contexts (money, time, measures, everyday rates).
+      - Respect the syllabus big ideas: Proportionality (ratios/rates/percentages), Equivalence (equal forms/values), Diagrams & Representations (clear quantities/units), Measures (with correct units), and Notations (concise symbols).
+
       Rules:
       - ${typeInstruction}
-      - One short paragraph (<= 80 words).
-      - Topics: whole numbers, time/money, simple rates; keep numbers age-appropriate.
+      - One short paragraph (<= 80 words), self-contained, culturally neutral.
+      - Use only numbers and units suitable for Primary 5; avoid exotic contexts and avoid multi-topic mashups.
       - Return ONLY JSON:
       {"problem_text": "...", "final_answer": 123}
-      Scale the numbers and steps to match the difficulty:
+
+      Scaling by difficulty:
       - Easy: 1–2 steps, small integers.
-      - Medium: 2–3 steps, moderate integers or simple fractions.
-      - Hard: up to 3 steps, centered on the specified type if not mixed; if mixed, still Primary 5 and reasonable.
+      - Medium: 2–3 steps, moderate integers or simple fractions/percentages.
+      - Hard: up to 3 steps, still reasonable for Primary 5, with clean arithmetic.
+
+      Ensure the problem has a unique correct answer, and the final answer is a single number (use appropriate unit only if obvious, otherwise a pure number).
       `;
 
     const resp = await model.generateContent(prompt);
