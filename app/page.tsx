@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface MathProblem {
   problem_text: string
@@ -10,6 +10,16 @@ interface MathProblem {
 }
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard'
+
+type Score = {
+  client_id: string
+  total_attempts: number
+  correct_count: number
+  current_streak: number
+  best_streak: number
+  points: number
+  accuracy: number
+} | null
 
 export default function Home() {
   const [problem, setProblem] = useState<MathProblem | null>(null)
@@ -19,6 +29,15 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium')
+  const [score, setScore] = useState<Score>(null)
+
+  useEffect(() => {
+    // optional: show score on first load
+    fetch('/api/score', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => setScore(j.score ?? null))
+      .catch(() => {})
+  }, [])
 
   const generateProblem = async () => {
     setIsLoading(true)
@@ -63,6 +82,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || 'Failed to submit answer')
       setIsCorrect(Boolean(data.is_correct))
       setFeedback(String(data.feedback ?? ''))
+      if (data.score) setScore(data.score) // ✅ update score from server
     } catch (err: any) {
       setIsCorrect(false)
       setFeedback(err.message ?? 'Something went wrong while submitting.')
@@ -74,6 +94,28 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       <main className="container mx-auto px-4 py-8 max-w-2xl">
+
+        {score && (
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg bg-white p-3 shadow-sm">
+              <div className="text-xs text-gray-500">Points</div>
+              <div className="text-xl font-bold">{score.points}</div>
+            </div>
+            <div className="rounded-lg bg-white p-3 shadow-sm">
+              <div className="text-xs text-gray-500">Accuracy</div>
+              <div className="text-xl font-bold">{score.accuracy}%</div>
+            </div>
+            <div className="rounded-lg bg-white p-3 shadow-sm">
+              <div className="text-xs text-gray-500">Streak</div>
+              <div className="text-xl font-bold">{score.current_streak}</div>
+            </div>
+            <div className="rounded-lg bg-white p-3 shadow-sm">
+              <div className="text-xs text-gray-500">Best</div>
+              <div className="text-xl font-bold">{score.best_streak}</div>
+            </div>
+          </div>
+        )}
+
         <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
           Math Problem Generator
         </h1>
