@@ -5,6 +5,9 @@ import { z } from 'zod';
 import { supabase } from '@/lib/supabaseClient';
 import { cookies } from 'next/headers';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
 
 const Body = z.object({
@@ -27,11 +30,37 @@ export async function POST(req: NextRequest) {
 
     const { data: session, error: sErr } = await supabase
       .from('math_problem_sessions')
-      .select('id, problem_text, correct_answer')
+      .select('id, problem_text, correct_answer, revealed_at')
       .eq('id', session_id)
       .single();
     if (sErr || !session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    if (session.revealed_at) {
+      return NextResponse.json(
+        { error: 'solution_revealed', message: 'Solution already revealed. Submissions are disabled for this problem.' },
+        { status: 409 }
+      );
+    }
+
+    const { data: solvedRow, error: solvedErr } = await supabase
+      .from('math_problem_submissions')
+      .select('id')
+      .eq('session_id', session_id)
+      .eq('is_correct', true)
+      .limit(1)
+      .maybeSingle();
+
+    if (solvedErr) {
+      return NextResponse.json({ error: solvedErr.message }, { status: 500 });
+    }
+
+    if (solvedRow) {
+      return NextResponse.json(
+        { error: 'already_solved', message: 'This problem has already been solved.' },
+        { status: 409 }
+      );
     }
 
     const is_correct = Number(user_answer) === Number(session.correct_answer);
@@ -55,14 +84,13 @@ export async function POST(req: NextRequest) {
 
       Rules:
       - If incorrect: suggest the likely mistake and outline a short correct method (2–4 sentences).
-      - If correct: praise and suggest one small next step (1–2 sentences).
+      - If correct: praise, rephrase the problem & correct answer; then suggest one small next step (1–2 sentences); strictly do not ask another question.
       Return plain text only.
       `;
 
     const feedbackResp = await model.generateContent(feedbackPrompt);
     const feedback_text = feedbackResp.response.text().trim();
 
-    // Store submission
     const { data: sub, error: subErr } = await supabase
       .from('math_problem_submissions')
       .insert({
@@ -73,12 +101,20 @@ export async function POST(req: NextRequest) {
       })
       .select('id, is_correct, feedback_text, created_at')
       .single();
-    if (subErr) throw subErr;
 
-    // ---- Score tracking (anonymous client) ----
+    if (subErr) {
+      const msg = subErr.message || '';
+      if (msg.includes('duplicate key') || msg.includes('23505')) {
+        return NextResponse.json(
+          { error: 'already_solved', message: 'This problem has already been solved.' },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ error: subErr.message }, { status: 500 });
+    }
+
     const client_id = getOrCreateClientId();
 
-    // Fetch current summary if exists
     const { data: existing } = await supabase
       .from('score_summaries')
       .select('*')
@@ -91,8 +127,7 @@ export async function POST(req: NextRequest) {
     let best_streak = Math.max(existing?.best_streak ?? 0, current_streak);
     let points = Math.max(0, (existing?.points ?? 0) + (is_correct ? 10 : -2));
 
-    // Upsert summary
-    const { data: scoreRow, error: scoreErr } = await supabase
+    const { error: scoreErr } = await supabase
       .from('score_summaries')
       .upsert({
         client_id,
@@ -105,9 +140,11 @@ export async function POST(req: NextRequest) {
       })
       .select()
       .single();
-    if (scoreErr) throw scoreErr;
 
-    // Build response and set cookie if new
+    if (scoreErr) {
+      return NextResponse.json({ error: scoreErr.message }, { status: 500 });
+    }
+
     const res = NextResponse.json({
       submission_id: sub.id,
       is_correct: sub.is_correct,
@@ -123,7 +160,6 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // Persist anonymous id for future requests (30 days)
     const jar = cookies();
     if (!jar.get('mpg_id')) {
       res.cookies.set('mpg_id', client_id, { httpOnly: true, sameSite: 'lax', maxAge: 60 * 60 * 24 * 30, path: '/' });

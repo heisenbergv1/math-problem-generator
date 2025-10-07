@@ -17,7 +17,7 @@ This is a starter kit for building an AI-powered math problem generator applicat
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone git@github.com:heisenbergv1/math-problem-generator.git
 cd math-problem-generator
 ```
 
@@ -109,9 +109,9 @@ Create a new API route that handles:
 - [x] Problems and answers are saved to Supabase
 - [x] User submissions are saved with feedback
 - [x] AI generates helpful, personalized feedback
-- [ ] UI is clean and mobile-responsive
-- [ ] Error handling for API failures
-- [ ] Loading states during API calls
+- [x] UI is clean and mobile-responsive
+- [x] Error handling for API failures
+- [x] Loading states during API calls
 
 ## Deployment
 
@@ -122,27 +122,31 @@ Create a new API route that handles:
 3. Add your environment variables in Vercel's project settings
 4. Deploy!
 
-## Assessment Submission
+## Live Demo
 
-When submitting your assessment, provide:
-
-1. **GitHub Repository URL**: Make sure it's public
-2. **Live Demo URL**: Your Vercel deployment
-3. **Supabase Credentials**: Add these to your README for testing:
+2. **Live Demo URL**: https://math-problem-generator-pi.vercel.app/
+3. **Supabase Credentials**:
    ```
-   SUPABASE_URL: [Your Supabase Project URL]
-   SUPABASE_ANON_KEY: [Your Supabase Anon Key]
+   SUPABASE_URL: https://fyudwcsgploehkstpnpi.supabase.co
+   SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5dWR3Y3NncGxvZWhrc3RwbnBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NTYzNDAsImV4cCI6MjA3NTMzMjM0MH0.i6kW96zwi1e9CkF3PUHwTgaXMmuu_pX1hHbgQVTUAto
    ```
 
 ## Implementation Notes
 
-*Please fill in this section with any important notes about your implementation, design decisions, challenges faced, or features you're particularly proud of.*
+*This section is for any important notes about the implementation, design decisions, challenges faced, or features particularly proud of.*
 
-### My Implementation:
+### Implementation:
 
-- 
-- 
-- 
+- Two-column layout: fixed-height left `SettingsPanel` (`md:h-96 md:overflow-y-auto`) to align with the right pane without touching the panel code.
+- Correct-answer feedback moved to a reusable, center modal (emerald theme, blur overlay, fade/bounce, Esc to close, a11y labels). Same modal on re-submit of solved problems.
+- “Show Solution Steps” becomes a toggle that, once revealed, locks the session—user must generate a new problem. Enforced in UI and backend (`409 solution_revealed`).
+- Co-located solution UI/state under `ProblemDisplay`; removed inner close button per spec.
+- Backend hard guards: `409 already_solved` if a correct submission exists; consistent JSON errors.
+- History API returns all attempts; History page shows collapsible attempts table, wider “When” column, shadows, empty/error states.
+- Production-safe data fetching: absolute URL via `NEXT_PUBLIC_BASE_URL` and `cache: 'no-store'` where needed; fixes Vercel relative-fetch issues.
+- Score updates preserved on submit; shared types (`Difficulty`, `ProblemType`) centralized in `@/lib/types`.
+- Minimal, surgical changes; Tailwind for animations (plus tiny keyframe for modal “pop”); focus/hover states and spinners for UX polish.
+
 
 ## Additional Features (Optional)
 
@@ -152,7 +156,7 @@ If you have time, consider adding:
 - [x] Problem history view
 - [x] Score tracking
 - [x] Different problem types (addition, subtraction, multiplication, division)
-- [ ] Hints system
-- [ ] Step-by-step solution explanations
+- [x] Hints system
+- [x] Step-by-step solution explanations
 
 ---

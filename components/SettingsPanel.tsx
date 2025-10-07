@@ -1,9 +1,7 @@
 import React from 'react'
 import Link from 'next/link';
 import { BrainIcon, HistoryIcon } from 'lucide-react'
-
-export type Difficulty = 'Easy' | 'Medium' | 'Hard';
-export type ProblemType = 'addition' | 'subtraction' | 'multiplication' | 'division' | 'mixed';
+import { Difficulty, ProblemType } from '@/lib/types';
 
 interface SettingsPanelProps {
   difficulty: Difficulty

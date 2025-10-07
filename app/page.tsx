@@ -2,22 +2,18 @@
 
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { TrophyIcon, BookOpenIcon, BrainIcon } from 'lucide-react'
+import { TrophyIcon, BrainIcon } from 'lucide-react'
 import { ScoreDisplay } from '@/components/ScoreDisplay'
 import { ProblemDisplay } from '@/components/ProblemDisplay'
-import { FeedbackDisplay } from '@/components/FeedbackDisplay'
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { HintDisplay } from '@/components/HintDisplay'
+import { Difficulty, ProblemType } from '@/lib/types'
 
 interface MathProblem {
   problem_text: string
   final_answer?: number
 }
-
-type Difficulty = 'Easy' | 'Medium' | 'Hard'
-type ProblemType = 'addition' | 'subtraction' | 'multiplication' | 'division' | 'mixed'
 
 type Score = {
   client_id: string
@@ -33,14 +29,19 @@ export default function Home() {
   const [problem, setProblem] = useState<MathProblem | null>(null)
   const [userAnswer, setUserAnswer] = useState('')
   const [feedback, setFeedback] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingSubmit, setIsLoadingSubmit] = useState(false)
+  const [isLoadingSettingsPanel, setIsLoadingSettingsPanel] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [isSubmitDisabled, setIsSubmitDisabled] = useState<boolean | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium')
   const [problemType, setProblemType] = useState<ProblemType>('addition')
   const [score, setScore] = useState<Score>(null)
   const [hint, setHint] = useState<string>('')
   const [isHintLoading, setIsHintLoading] = useState(false)
+  const [showModal, setShowModal] = useState(false)
+  const [modalMessage, setModalMessage] = useState('')
+  const [modalTitle, setModalTitle] = useState('')
 
   useEffect(() => {
     fetch('/api/score', { cache: 'no-store' })
@@ -49,8 +50,18 @@ export default function Home() {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setShowModal(false)
+      }
+    }
+    if (showModal) window.addEventListener('keydown', onEsc)
+    return () => window.removeEventListener('keydown', onEsc)
+  }, [showModal])
+
   const generateProblem = async () => {
-    setIsLoading(true)
+    setIsLoadingSettingsPanel(true)
     setFeedback('')
     setIsCorrect(null)
     setUserAnswer('')
@@ -63,13 +74,14 @@ export default function Home() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to generate problem')
+      setIsSubmitDisabled(false)
       setSessionId(data.session_id)
       setProblem({ problem_text: data.problem_text })
     } catch (err: any) {
       setFeedback(err.message ?? 'Something went wrong while generating.')
       setIsCorrect(false)
     } finally {
-      setIsLoading(false)
+      setIsLoadingSettingsPanel(false)
     }
   }
 
@@ -98,28 +110,53 @@ export default function Home() {
   const submitAnswer = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!sessionId) return
-    setIsLoading(true)
+    if (isCorrect === true) {
+      setModalTitle('Already Solved')
+      setModalMessage('You already solved this one! Generate a new problem to answer again.')
+      setShowModal(true)
+      return
+    }
+    setIsLoadingSubmit(true)
     setFeedback('')
     setIsCorrect(null)
     try {
       const res = await fetch('/api/math-problem/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          user_answer: Number(userAnswer)
-        })
+        body: JSON.stringify({ session_id: sessionId, user_answer: Number(userAnswer) })
       })
       const data = await res.json()
+      if (res.status === 409 && data?.error === 'already_solved') {
+        setIsCorrect(true)
+        setModalTitle('Already Solved')
+        setModalMessage(String(data?.message ?? 'This problem has already been solved.'))
+        setShowModal(true)
+        return
+      }
+      if (res.status === 409 && data?.error === 'solution_revealed') {
+        setIsSubmitDisabled(true)
+        setModalTitle('Solution Revealed')
+        setModalMessage('You revealed the solution steps. Submissions are disabled for this problem. Generate a new one to continue.')
+        setShowModal(true)
+        return
+      }
       if (!res.ok) throw new Error(data.error || 'Failed to submit answer')
-      setIsCorrect(Boolean(data.is_correct))
-      setFeedback(String(data.feedback ?? ''))
+      const correct = Boolean(data.is_correct)
+      setIsCorrect(correct)
+      if (correct) {
+        setIsSubmitDisabled(true)
+        setModalTitle('Correct Answer!')
+        setModalMessage(String(data.feedback ?? 'Great job! That\'s the correct answer.'))
+        setShowModal(true)
+      } else {
+        setFeedback(String(data.feedback ?? ''))
+      }
       if (data.score) setScore(data.score)
     } catch (err: any) {
       setIsCorrect(false)
       setFeedback(err.message ?? 'Something went wrong while submitting.')
     } finally {
-      setIsLoading(false)
+      setIsLoadingSubmit(false)
     }
   }
 
@@ -139,14 +176,14 @@ export default function Home() {
         {score && <ScoreDisplay score={score} />}
 
         <div className="flex flex-col md:flex-row gap-6">
-          <div className="w-full md:w-1/3">
+          <div className="w-full md:w-1/3 md:h-96 md:overflow-y-auto md:min-h-0">
             <SettingsPanel
               difficulty={difficulty}
               setDifficulty={setDifficulty}
               problemType={problemType}
               setProblemType={setProblemType}
               generateProblem={generateProblem}
-              isLoading={isLoading}
+              isLoading={isLoadingSettingsPanel}
             />
           </div>
 
@@ -160,17 +197,25 @@ export default function Home() {
                   userAnswer={userAnswer}
                   setUserAnswer={setUserAnswer}
                   submitAnswer={submitAnswer}
-                  isLoading={isLoading}
+                  isLoading={isLoadingSubmit}
+                  feedback={feedback}
+                  isCorrect={isCorrect}
+                  isDisabled={isSubmitDisabled}
+                  sessionId={sessionId ?? ''}
+                  onSolutionRevealed={() => {
+                    setIsSubmitDisabled(true)
+                    setModalTitle('Solution Revealed')
+                    setModalMessage('You revealed the solution steps. Submissions are disabled for this problem. Generate a new one to continue.')
+                    setShowModal(true)
+                  }}
                 />
+
                 <HintDisplay
                   hint={hint}
                   isHintLoading={isHintLoading}
                   requestHint={requestHint}
                   sessionId={sessionId}
                 />
-                {feedback && (
-                  <FeedbackDisplay feedback={feedback} isCorrect={isCorrect} />
-                )}
               </>
             ) : (
               <div className="bg-white rounded-lg shadow-lg p-8 border border-indigo-100 text-center flex flex-col items-center justify-center h-96">
@@ -188,15 +233,50 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mt-8 text-center">
-          <Link
-            href="/history"
-            className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-medium"
-            prefetch
+        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${showModal ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className={`w-[90vw] max-w-md rounded-2xl border border-emerald-200/70 bg-emerald-50/95 shadow-2xl ring-1 ring-emerald-100/60 transition-all duration-300 ease-out transform ${showModal ? 'opacity-100 scale-100 animate-pop' : 'opacity-0 scale-95'}`}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            aria-describedby="modal-desc"
           >
-            <BookOpenIcon size={18} />
-            View Problem History
-          </Link>
+            <div className="flex items-start gap-3 p-6 pb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 ring-1 ring-emerald-200">
+                <svg viewBox="0 0 24 24" className="h-6 w-6 text-emerald-700" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <path d="M22 4 12 14.01l-3-3" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 id="modal-title" className="text-lg font-semibold text-emerald-900">{modalTitle}</h3>
+                <p id="modal-desc" className="mt-1 text-emerald-900/80">{modalMessage}</p>
+              </div>
+            </div>
+            <div className="px-6">
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-emerald-200/70 to-transparent" />
+            </div>
+            <div className="flex items-center justify-end gap-2 p-6 pt-4">
+              <button
+                onClick={() => setShowModal(false)}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-white font-semibold shadow hover:shadow-md transition-all duration-200 hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 active:scale-[0.98]"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+
+          <style jsx>{`
+            @keyframes pop {
+              0% { transform: scale(0.96); opacity: 0; }
+              60% { transform: scale(1.04); opacity: 1; }
+              100% { transform: scale(1); opacity: 1; }
+            }
+            .animate-pop { animation: pop 200ms var(--ease-pop, cubic-bezier(.2,.8,.2,1)) both; }
+          `}</style>
         </div>
       </main>
     </div>

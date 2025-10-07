@@ -1,3 +1,5 @@
+// app\api\history\route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -60,6 +62,21 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ items });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const { error } = await supabase
+      .from('math_problem_sessions')
+      .delete()
+      .gt('created_at', '1970-01-01T00:00:00Z');
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 500 });
   }
