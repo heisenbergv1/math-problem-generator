@@ -215,7 +215,7 @@ export default function Home() {
                   }}
                 />
 
-                {!isCorrect ?
+                {!isSubmitDisabled ?
                   <HintDisplay
                     hints={hints}
                     isHintLoading={isHintLoading}
