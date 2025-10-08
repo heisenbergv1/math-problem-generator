@@ -10,6 +10,9 @@ export const dynamic = 'force-dynamic';
 
 const MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
 
+const GEN_TIMEOUT_MS = 8000;
+const GEN_MAX_RETRIES = 2;
+
 const Body = z.object({
   difficulty: z.enum(['Easy', 'Medium', 'Hard']).optional().default('Medium'),
   problem_type: z.enum(['addition','subtraction','multiplication','division','mixed']).optional().default('addition')
@@ -46,10 +49,34 @@ function parseFinalFromSteps(steps: string[], fallback: number | null = null): n
   return Number.isFinite(fallback as number) ? (fallback as number) : null;
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('generation_timeout')), ms);
+    p.then(v => { clearTimeout(t); resolve(v); }).catch(e => { clearTimeout(t); reject(e); });
+  });
+}
+
+async function generateWithRetry(gen: () => Promise<string>): Promise<string> {
+  let lastErr: any = null;
+  for (let i = 0; i <= GEN_MAX_RETRIES; i++) {
+    try {
+      return await gen();
+    } catch (e: any) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('generation_failed');
+}
+
+function formatFinalNumber(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'Missing GOOGLE_API_KEY' }, { status: 500 });
+    if (!apiKey) return NextResponse.json({ error: 'Missing GOOGLE_API_KEY' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
 
     const { difficulty, problem_type } = Body.parse(await req.json().catch(() => ({})));
 
@@ -98,10 +125,7 @@ export async function POST(req: NextRequest) {
       STEPS RULES:
       - "steps" is an array of short strings (no markdown).
       - Structure = [work steps..., final step]; the FINAL step MUST be exactly: "Final answer: <number>".
-      - Work steps length target by difficulty (the counts below EXCLUDE the final step):
-        - Easy: 1–2 work steps
-        - Medium: 3–6 work steps
-        - Hard: 7–15 work steps
+      - Work steps length target by difficulty as specified below.
       - Total steps = work steps + 1 final step. Keep each step <= 160 characters.
       - If any quantities are in fraction form, include one step showing both forms, e.g. "Convert: 3/4 = 0.75".
       - When converting to decimal, use round half-up to 2 decimal places (e.g., 1.245 → 1.25).
@@ -118,13 +142,13 @@ export async function POST(req: NextRequest) {
     
       EASY:
       - STRICTLY FOLLOW THE OPERATION: ${problem_type}
-      - Steps: 1–2.
+      - Work steps: 1–2.
       - Numbers: small integers 1–50 (avoid decimals and fractions).
       - STRICTLY MUST NOT include rates, fractions, percentages, multi-stage reasoning, or distracting extra data.
 
       MEDIUM:
       - STRICTLY FOLLOW THE OPERATION: ${problem_type}
-      - Steps: 2–3.
+      - Work steps: 3–6.
       - Numbers: 10–500 (allow one simple fraction with denominator 2, 4, 5, 10 OR one decimal to 1 dp).
       - Operations: 
         - If PROBLEM TYPE is MIXED, may combine two operations or include regrouping; if division, keep exact results.
@@ -133,12 +157,12 @@ export async function POST(req: NextRequest) {
 
       HARD:
       - STRICTLY FOLLOW THE OPERATION: ${problem_type}
-      - Steps: 2–3 (no more than 3).
+      - Work steps: 7–15
       - Numbers: up to 1 000; allow simple fractions/decimals if needed.
       - Operations: 
         - If PROBLEM TYPE is MIXED, mixed operations or a two-stage reasoning (e.g., rate then total), still clean and solvable without advanced tricks.
         - Otherwise, use the specified problem type (${problem_type})
-      - May include one distractor detail; keep arithmetic tidy (no unwieldy primes or messy remainders).
+      - May include one distractor detail; keep arithmetic tidy.
 
       Difficulty guard:
       - If your drafted problem violates the chosen Difficulty and Problem Type, silently fix/regenerate BEFORE returning JSON.
@@ -151,29 +175,39 @@ export async function POST(req: NextRequest) {
       Return only the JSON object described above.
     `;
 
-    const resp = await model.generateContent(prompt);
-    const raw = resp.response.text().trim();
+    const raw = await generateWithRetry(async () => {
+      const r = await withTimeout(model.generateContent(prompt), GEN_TIMEOUT_MS);
+      return r.response.text().trim();
+    });
+
     const jsonText = sanitizeToStrictJson(raw);
-
     const parsedResult = Output.safeParse(JSON.parse(jsonText));
-    // console.log(parsedResult);
-
     if (!parsedResult.success) {
-      return NextResponse.json({ error: 'AI JSON invalid', issues: parsedResult.error.format(), raw }, { status: 502 });
+      return NextResponse.json({ error: 'AI JSON invalid', issues: parsedResult.error.format(), raw }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const steps = parsedResult.data.steps;
-    const answerFromField = parsedResult.data.final_answer;
-    const answerFromSteps = parseFinalFromSteps(steps, answerFromField);
-    if (!Number.isFinite(answerFromSteps)) {
-      return NextResponse.json({ error: 'Final answer missing or invalid in steps' }, { status: 502 });
+    let steps = parsedResult.data.steps;
+    const fieldAnswer = parsedResult.data.final_answer;
+    const parsedAnswer = parseFinalFromSteps(steps, fieldAnswer);
+    if (!Number.isFinite(parsedAnswer)) {
+      return NextResponse.json({ error: 'Final answer missing or invalid in steps' }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    const formatted = formatFinalNumber(parsedAnswer as number);
+    const last = steps[steps.length - 1] ?? '';
+    if (!/^final\s*answer\s*:/i.test(last) || !new RegExp(`final\\s*answer\\s*:\\s*${formatted.replace('.', '\\.')}$`, 'i').test(last.trim())) {
+      if (/^final\s*answer\s*:/i.test(last)) {
+        steps = [...steps.slice(0, -1), `Final answer: ${formatted}`];
+      } else {
+        steps = [...steps, `Final answer: ${formatted}`];
+      }
     }
 
     const { data: sessionRow, error: insertErr } = await supabase
       .from('math_problem_sessions')
       .insert({
         problem_text: parsedResult.data.problem_text,
-        correct_answer: answerFromSteps as number,
+        correct_answer: Number(formatted),
         difficulty,
         problem_type
       })
@@ -181,7 +215,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (insertErr || !sessionRow) {
-      return NextResponse.json({ error: insertErr?.message ?? 'Failed to create session' }, { status: 500 });
+      return NextResponse.json({ error: insertErr?.message ?? 'Failed to create session' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
 
     const { error: solErr } = await supabase
@@ -192,7 +226,7 @@ export async function POST(req: NextRequest) {
       });
 
     if (solErr && !String(solErr.message || '').toLowerCase().includes('duplicate')) {
-      return NextResponse.json({ error: solErr.message }, { status: 500 });
+      return NextResponse.json({ error: solErr.message }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
 
     return NextResponse.json({
@@ -200,8 +234,8 @@ export async function POST(req: NextRequest) {
       problem_text: sessionRow.problem_text,
       difficulty: sessionRow.difficulty,
       problem_type: sessionRow.problem_type
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }

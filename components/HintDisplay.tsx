@@ -1,24 +1,50 @@
-// components\HintDisplay.tsx
-import React from 'react'
-import { LightbulbIcon } from 'lucide-react'
+// components/HintDisplay.tsx
+import React, { useMemo } from 'react';
+import { LightbulbIcon } from 'lucide-react';
 
 interface HintDisplayProps {
-  hints: string[]
-  isHintLoading: boolean
-  requestHint: () => void
-  sessionId: string | null
-  maxHints?: number
+  hints: string[];
+  isHintLoading: boolean;
+  requestHint: () => void;
+  sessionId: string | null;
+  maxHints?: number;
 }
 
-export function HintDisplay({
+export const HintDisplay = React.memo(function HintDisplay({
   hints,
   isHintLoading,
   requestHint,
   sessionId,
-  maxHints = 5,
+  maxHints = 5
 }: HintDisplayProps) {
-  const count = hints.length
-  const disabled = !sessionId || isHintLoading || count >= maxHints
+  const count = hints.length;
+  const disabled = !sessionId || isHintLoading || count >= maxHints;
+
+  const buttonLabel = useMemo(
+    () => (isHintLoading ? 'Getting hint...' : `Get Hint (${count}/${maxHints})`),
+    [isHintLoading, count, maxHints]
+  );
+
+  const list = useMemo(
+    () =>
+      hints.map((h, i) => (
+        <div
+          key={`${i}-${h.slice(0, 24)}`}
+          className="rounded-md border border-amber-200 bg-amber-50 p-4 text-gray-800 animate-fade-in shadow-sm"
+        >
+          <div className="flex">
+            <div className="mr-3 flex-shrink-0">
+              <LightbulbIcon size={20} className="text-amber-500" />
+            </div>
+            <div>
+              <p className="font-medium text-amber-800 mb-1">Hint {i + 1}</p>
+              <p className="text-gray-700">{h}</p>
+            </div>
+          </div>
+        </div>
+      )),
+    [hints]
+  );
 
   return (
     <div className="mt-4 mb-6 animate-fade-in">
@@ -27,32 +53,20 @@ export function HintDisplay({
           onClick={requestHint}
           disabled={disabled}
           className="rounded-lg bg-amber-500 px-4 py-2 font-semibold text-white hover:bg-amber-600 disabled:bg-gray-400 transition-colors flex items-center gap-2"
+          aria-disabled={disabled}
+          aria-busy={isHintLoading}
         >
           <LightbulbIcon size={18} />
-          {isHintLoading ? 'Getting hint...' : `Get Hint (${count}/${maxHints})`}
+          {buttonLabel}
         </button>
-        {count > 0 && (
-          <span className="text-sm text-gray-600">Hints appear below</span>
-        )}
+        {count > 0 && <span className="text-sm text-gray-600">Hints appear below</span>}
       </div>
 
       {count > 0 && (
-        <div className="mt-3 space-y-3">
-          {hints.map((h, i) => (
-            <div key={i} className="rounded-md border border-amber-200 bg-amber-50 p-4 text-gray-800 animate-fade-in shadow-sm">
-              <div className="flex">
-                <div className="mr-3 flex-shrink-0">
-                  <LightbulbIcon size={20} className="text-amber-500" />
-                </div>
-                <div>
-                  <p className="font-medium text-amber-800 mb-1">Hint {i + 1}</p>
-                  <p className="text-gray-700">{h}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="mt-3 space-y-3" aria-live="polite">
+          {list}
         </div>
       )}
     </div>
-  )
-}
+  );
+});

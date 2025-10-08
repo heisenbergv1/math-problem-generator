@@ -99,6 +99,11 @@ export default function HistoryPage() {
     return () => { mounted = false; };
   }, []);
 
+  const handleCleared = useCallback(() => {
+    setItems([]);
+    setErrorMessage(null);
+  }, []);
+
   const itemsView = useMemo(() => {
     return items.map(it => ({
       ...it,
@@ -123,7 +128,7 @@ export default function HistoryPage() {
           <h1 className="text-2xl font-bold text-gray-900">Problem History</h1>
           <div className="flex items-center gap-2">
             <Suspense fallback={null}>
-              <ClearHistoryButton />
+              <ClearHistoryButton onCleared={handleCleared} />
             </Suspense>
             <Link
               href="/"
@@ -231,7 +236,7 @@ export default function HistoryPage() {
   );
 }
 
-function ClearHistoryButton() {
+function ClearHistoryButton({ onCleared }: { onCleared?: () => void }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -249,13 +254,14 @@ function ClearHistoryButton() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || 'Failed to clear history');
       setOpen(false);
+      if (onCleared) onCleared();
       router.refresh();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to clear history');
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, onCleared]);
 
   return (
     <>

@@ -15,6 +15,12 @@ const Body = z.object({
   user_answer: z.number()
 });
 
+const FEEDBACK_TIMEOUT_MS = 7000;
+const FEEDBACK_MAX_RETRIES = 2;
+const POINTS_CORRECT = 10;
+const POINTS_INCORRECT = -2;
+const FEEDBACK_MAX_LEN = 600;
+
 function getOrCreateClientId() {
   const jar = cookies();
   let cid = jar.get('mpg_id')?.value;
@@ -22,6 +28,85 @@ function getOrCreateClientId() {
     cid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
   }
   return cid;
+}
+
+function buildFeedbackPrompt(problem_text: string, correct: number, user: number, isCorrect: boolean) {
+  return `
+    You are giving feedback to a Primary 5 (Grade 5) student. Be kind, specific, and short.
+
+    Problem:
+    """${problem_text}"""
+
+    Correct answer: ${correct}
+    Student answer: ${user}
+    Result: ${isCorrect ? 'correct' : 'incorrect'}
+
+    OUTPUT:
+    - Return PLAIN TEXT only. No code blocks, no LaTeX, no lists, no emojis.
+    - Use simple words a Primary 5 student understands.
+
+    CONTENT RULES:
+    - Stay faithful to the numbers given above. Do not invent or change quantities.
+    - Do not restate the full problem; summarize only what is needed.
+    - If incorrect:
+      - In 2–4 short sentences, point out the most likely mistake or missing step.
+      - Give a tiny nudge on the correct method.
+      - Do NOT reveal the final numeric answer.
+    - If correct:
+      - In 1–2 short sentences, praise and briefly restate the key idea and the correct result.
+      - Add exactly one concrete next-step tip.
+      - Do NOT ask a question and do NOT give a new problem.
+
+    STYLE:
+    - Keep sentences short and clear.
+    - Avoid technical jargon unless needed; explain it simply if used.
+    - 3–5 sentences total.
+    `.trim();
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('feedback_timeout')), ms);
+    p.then((v) => {
+      clearTimeout(t);
+      resolve(v);
+    }).catch((e) => {
+      clearTimeout(t);
+      reject(e);
+    });
+  });
+}
+
+function redactAnswer(text: string, correct: number): string {
+  const intForm = Number.isInteger(correct) ? String(correct) : String(Math.trunc(correct));
+  const twoDpForm = (Math.round(correct * 100) / 100).toFixed(2);
+  const patterns = Array.from(new Set([intForm, twoDpForm])).map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (patterns.length === 0) return text;
+  const re = new RegExp(`\\b(?:${patterns.join('|')})\\b`, 'g');
+  return text.replace(re, '[redacted]');
+}
+
+function sanitizeFeedback(s: string, correct: number): string {
+  const stripped = s.replace(/`{3,}[\s\S]*?`{3,}/g, '').replace(/\s+\n/g, '\n').trim();
+  const redacted = redactAnswer(stripped, correct);
+  return redacted.length > FEEDBACK_MAX_LEN ? redacted.slice(0, FEEDBACK_MAX_LEN).trim() : redacted;
+}
+
+async function generateFeedback(apiKey: string, modelName: string, prompt: string, correct: number): Promise<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: modelName });
+
+  let lastErr: any = null;
+  for (let i = 0; i <= FEEDBACK_MAX_RETRIES; i++) {
+    try {
+      const resp = await withTimeout(model.generateContent(prompt), FEEDBACK_TIMEOUT_MS);
+      const text = resp.response.text().trim();
+      if (text) return sanitizeFeedback(text, correct);
+    } catch (e: any) {
+      lastErr = e;
+    }
+  }
+  return 'Thanks for your effort. Review your steps and check the operations carefully. Try again using the main idea from the question.';
 }
 
 export async function POST(req: NextRequest) {
@@ -34,13 +119,13 @@ export async function POST(req: NextRequest) {
       .eq('id', session_id)
       .single();
     if (sErr || !session) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Session not found' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
     }
 
     if (session.revealed_at) {
       return NextResponse.json(
         { error: 'solution_revealed', message: 'Solution already revealed. Submissions are disabled for this problem.' },
-        { status: 409 }
+        { status: 409, headers: { 'Cache-Control': 'no-store' } }
       );
     }
 
@@ -53,61 +138,39 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (solvedErr) {
-      return NextResponse.json({ error: solvedErr.message }, { status: 500 });
+      return NextResponse.json({ error: solvedErr.message }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
 
     if (solvedRow) {
       return NextResponse.json(
         { error: 'already_solved', message: 'This problem has already been solved.' },
-        { status: 409 }
+        { status: 409, headers: { 'Cache-Control': 'no-store' } }
       );
     }
-
-    // console.log('[INFO] User answer:', user_answer, 'Correct answer:', session.correct_answer);
 
     const is_correct = Number(user_answer) === Number(session.correct_answer);
 
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Missing GOOGLE_API_KEY' }, { status: 500 });
+      return NextResponse.json({ error: 'Missing GOOGLE_API_KEY' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: MODEL });
 
-    const feedbackPrompt = `
-      You are giving feedback to a Primary 5 (Grade 5) student. Be kind, specific, and short.
+    const client_id = getOrCreateClientId();
 
-      Problem:
-      """${session.problem_text}"""
-
-      Correct answer: ${session.correct_answer}
-      Student answer: ${user_answer}
-      Result: ${is_correct ? 'correct' : 'incorrect'}
-
-      OUTPUT:
-      - Return PLAIN TEXT only. No code blocks, no LaTeX, no lists, no emojis.
-      - Use simple words a Primary 5 student understands.
-
-      CONTENT RULES:
-      - Stay faithful to the numbers given above. Do not invent or change quantities.
-      - Do not restate the full problem; summarize only what is needed.
-      - If incorrect:
-        - In 2–4 short sentences, point out the most likely mistake or missing step.
-        - Give a tiny nudge on the correct method (e.g., which operation/order to use, or how to set it up).
-        - Do NOT reveal the final numeric answer.
-      - If correct:
-        - In 1–2 short sentences, praise and briefly restate the key idea and the correct result.
-        - Add exactly one concrete next-step tip (e.g., “try with a bigger number” or “now mix multiplication and division”).
-        - Do NOT ask a question and do NOT give a new problem.
-
-      STYLE:
-      - Keep sentences short and clear.
-      - Avoid technical jargon unless needed; explain it simply if used.
-      - 3–5 sentences total.
-      `;
-
-    const feedbackResp = await model.generateContent(feedbackPrompt);
-    const feedback_text = feedbackResp.response.text().trim();
+    const [feedback_text, existingScore] = await Promise.all([
+      generateFeedback(
+        apiKey,
+        MODEL,
+        buildFeedbackPrompt(session.problem_text, Number(session.correct_answer), Number(user_answer), is_correct),
+        Number(session.correct_answer)
+      ),
+      supabase
+        .from('score_summaries')
+        .select('*')
+        .eq('client_id', client_id)
+        .maybeSingle()
+        .then(({ data }) => data)
+    ]);
 
     const { data: sub, error: subErr } = await supabase
       .from('math_problem_submissions')
@@ -125,25 +188,17 @@ export async function POST(req: NextRequest) {
       if (msg.includes('duplicate key') || msg.includes('23505')) {
         return NextResponse.json(
           { error: 'already_solved', message: 'This problem has already been solved.' },
-          { status: 409 }
+          { status: 409, headers: { 'Cache-Control': 'no-store' } }
         );
       }
-      return NextResponse.json({ error: subErr.message }, { status: 500 });
+      return NextResponse.json({ error: subErr.message }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const client_id = getOrCreateClientId();
-
-    const { data: existing } = await supabase
-      .from('score_summaries')
-      .select('*')
-      .eq('client_id', client_id)
-      .maybeSingle();
-
-    let total_attempts = (existing?.total_attempts ?? 0) + 1;
-    let correct_count = (existing?.correct_count ?? 0) + (is_correct ? 1 : 0);
-    let current_streak = is_correct ? (existing?.current_streak ?? 0) + 1 : 0;
-    let best_streak = Math.max(existing?.best_streak ?? 0, current_streak);
-    let points = Math.max(0, (existing?.points ?? 0) + (is_correct ? 10 : -2));
+    let total_attempts = (existingScore?.total_attempts ?? 0) + 1;
+    let correct_count = (existingScore?.correct_count ?? 0) + (is_correct ? 1 : 0);
+    let current_streak = is_correct ? (existingScore?.current_streak ?? 0) + 1 : 0;
+    let best_streak = Math.max(existingScore?.best_streak ?? 0, current_streak);
+    let points = Math.max(0, (existingScore?.points ?? 0) + (is_correct ? POINTS_CORRECT : POINTS_INCORRECT));
 
     const { error: scoreErr } = await supabase
       .from('score_summaries')
@@ -160,23 +215,26 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (scoreErr) {
-      return NextResponse.json({ error: scoreErr.message }, { status: 500 });
+      return NextResponse.json({ error: scoreErr.message }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const res = NextResponse.json({
-      submission_id: sub.id,
-      is_correct: sub.is_correct,
-      feedback: sub.feedback_text,
-      score: {
-        client_id,
-        total_attempts,
-        correct_count,
-        current_streak,
-        best_streak,
-        points,
-        accuracy: total_attempts ? +(correct_count * 100 / total_attempts).toFixed(1) : 0
-      }
-    });
+    const res = NextResponse.json(
+      {
+        submission_id: sub.id,
+        is_correct: sub.is_correct,
+        feedback: sub.feedback_text,
+        score: {
+          client_id,
+          total_attempts,
+          correct_count,
+          current_streak,
+          best_streak,
+          points,
+          accuracy: total_attempts ? +(correct_count * 100 / total_attempts).toFixed(1) : 0
+        }
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
 
     const jar = cookies();
     if (!jar.get('mpg_id')) {
@@ -186,8 +244,8 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (e: any) {
     if (e?.name === 'ZodError') {
-      return NextResponse.json({ error: 'Bad request', issues: e.issues }, { status: 400 });
+      return NextResponse.json({ error: 'Bad request', issues: e.issues }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
     }
-    return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message ?? 'Unknown error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }
