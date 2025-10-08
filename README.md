@@ -155,10 +155,10 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 1. **Prompt tuning for consistent, gradable outputs**
 
-   * Tightened the generation and solution prompts to enforce: JSON-only, explicit schema, and a final step formatted exactly as `Final answer: <number>`.
-   * Clarified “Work steps” vs “Final step” counts to avoid ambiguity that caused the model to over-generate steps.
-   * Added numeric formatting rules (integers vs two-decimals) and server-side validation to catch drift.
-   * Outcome: fewer malformed responses; easier to parse, save, and grade.
+* Tightened the generation and solution prompts to enforce: JSON-only, explicit schema, and a final step formatted exactly as `Final answer: <number>`.
+* Clarified “Work steps” vs “Final step” counts to avoid ambiguity that caused the model to over-generate steps.
+* Added numeric formatting rules (integers vs two-decimals) and server-side validation to catch drift.
+* Outcome: fewer malformed responses; easier to parse, save, and grade.
 
    **File:** `app/api/math-problem/route.ts`
 
@@ -183,9 +183,9 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 2. **Fail-safe model handling and graceful degradation**
 
-   * Wrapped all model calls with short timeouts and bounded retries; added minimal backoff.
-   * On failure, return concise, student-friendly fallback messages so the UI never silently stalls.
-   * Kept error messages user-safe while still surfacing enough detail server-side for ops.
+* Wrapped all model calls with short timeouts and bounded retries; added minimal backoff.
+* On failure, return concise, student-friendly fallback messages so the UI never silently stalls.
+* Kept error messages user-safe while still surfacing enough detail server-side for ops.
 
    **File:** `app/api/math-problem/route.ts`
 
@@ -211,9 +211,9 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 3. **Deterministic persistence & idempotency**
 
-   * Save-first-or-reuse patterns for solutions and hints to prevent duplicates on fast clicks or network retries.
-   * Parallelized independent queries (e.g., session lookup + hint count + history list), and added retry-on-23505 logic where appropriate.
-   * Result: fewer race conditions and no “ghost” records.
+* Save-first-or-reuse patterns for solutions and hints to prevent duplicates on fast clicks or network retries.
+* Parallelized independent queries (e.g., session lookup + hint count + history list), and added retry-on-23505 logic where appropriate.
+* Result: fewer race conditions and no “ghost” records.
 
    **File:** `app/api/math-problem/solution/route.ts`
 
@@ -244,8 +244,8 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 4. **Strict output validation before saving**
 
-   * Validate JSON structure (zod), final-step regex, and number formatting.
-   * If the last step is slightly off but recoverable (e.g., wrong decimal precision), we normalize before persisting to keep the DB coherent.
+* Validate JSON structure (zod), final-step regex, and number formatting.
+* If the last step is slightly off but recoverable (e.g., wrong decimal precision), we normalize before persisting to keep the DB coherent.
 
    **File:** `app/api/math-problem/solution/route.ts`
 
@@ -258,9 +258,9 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 5. **User experience under imperfect networks**
 
-   * Added optimistic/explicit loading states and small skeletons for long-running actions.
-   * Replaced silent `console.warn` patterns with user-visible error toasts/blocks.
-   * Disabled conflicting buttons during in-flight actions; added AbortController to cancel stale requests on problem changes/unmount.
+* Added optimistic/explicit loading states and small skeletons for long-running actions.
+* Replaced silent `console.warn` patterns with user-visible error toasts/blocks.
+* Disabled conflicting buttons during in-flight actions; added AbortController to cancel stale requests on problem changes/unmount.
 
    **File:** `components/ProblemDisplay.tsx`
 
@@ -276,8 +276,8 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 6. **State correctness & “Clear history” reliability**
 
-   * Fixed client state not clearing by plumbing an `onCleared()` callback from the modal back to the page to immediately empty the list, then `router.refresh()` to sync server/client.
-   * Avoids the confusing moment where the DB is cleared but the UI still shows old rows.
+* Fixed client state not clearing by plumbing an `onCleared()` callback from the modal back to the page to immediately empty the list, then `router.refresh()` to sync server/client.
+* Avoids the confusing moment where the DB is cleared but the UI still shows old rows.
 
    **File:** `app/history/page.tsx`
 
@@ -294,8 +294,8 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 7. **Cache discipline for correctness**
 
-   * Set `Cache-Control: no-store` on API responses that are personalized, rapidly changing, or mutation-related (score, feedback, hints, solutions).
-   * Prevents stale UI (especially under CDNs or shared caches) and ensures students always see the latest score/progress.
+* Set `Cache-Control: no-store` on API responses that are personalized, rapidly changing, or mutation-related (score, feedback, hints, solutions).
+* Prevents stale UI (especially under CDNs or shared caches) and ensures students always see the latest score/progress.
 
    **File:** `app/api/score/route.ts`
 
@@ -308,8 +308,8 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 8. **Performance through minimal re-renders**
 
-   * Wrapped presentational components in `React.memo`, used `useMemo`/`useCallback` for stable props, and avoided expensive work in render paths.
-   * Reduced unnecessary re-fetches and serialized awaits; pushed parallel fetches where safe.
+* Wrapped presentational components in `React.memo`, used `useMemo`/`useCallback` for stable props, and avoided expensive work in render paths.
+* Reduced unnecessary re-fetches and serialized awaits; pushed parallel fetches where safe.
 
    **File:** `components/ScoreDisplay.tsx`
 
@@ -332,23 +332,23 @@ Here are implementation notes, design decisions, challenges, and things we’re 
 
 9. **Consistency across endpoints**
 
-   * Normalized error shapes and headers (including `no-store`).
-   * Centralized small retry/backoff helpers per endpoint (not yet extracted globally to keep the patch small, but ready for a shared util).
+* Normalized error shapes and headers (including `no-store`).
+* Centralized small retry/backoff helpers per endpoint (not yet extracted globally to keep the patch small, but ready for a shared util).
 
 10. **Security & privacy minded feedback**
 
-   * Sanitized model feedback to avoid leaking exact answers when not intended and removed code fences/formatting artifacts.
-   * Kept messages short, age-appropriate, and focused on next actionable step.
+* Sanitized model feedback to avoid leaking exact answers when not intended and removed code fences/formatting artifacts.
+* Kept messages short, age-appropriate, and focused on next actionable step.
 
 11. **Testability & observability**
 
-   * Clear failure modes (400/404/409/5xx) make it straightforward to write integration tests.
-   * Returned `raw` text only on validation errors to help diagnose prompt drift during QA without exposing it to students.
+* Clear failure modes (400/404/409/5xx) make it straightforward to write integration tests.
+* Returned `raw` text only on validation errors to help diagnose prompt drift during QA without exposing it to students.
 
 12. **Known trade-offs & future polish**
 
-   * Current backoff is linear; a jittered exponential policy would further reduce thundering herd on transient 5xx/429.
-   * Retry utility is duplicated across routes for now to keep changes minimal; extracting a tiny shared helper is a low-risk follow-up.
-   * Additional content filters (e.g., stricter check for decimal precision) can be toggled if we see model regressions.
+* Current backoff is linear; a jittered exponential policy would further reduce thundering herd on transient 5xx/429.
+* Retry utility is duplicated across routes for now to keep changes minimal; extracting a tiny shared helper is a low-risk follow-up.
+* Additional content filters (e.g., stricter check for decimal precision) can be toggled if we see model regressions.
 
 ---
