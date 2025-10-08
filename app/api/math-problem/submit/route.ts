@@ -46,6 +46,7 @@ function buildFeedbackPrompt(problem_text: string, correct: number, user: number
     - Use simple words a Primary 5 student understands.
 
     CONTENT RULES:
+    - DO NOT USE LATEX.
     - Stay faithful to the numbers given above. Do not invent or change quantities.
     - Do not restate the full problem; summarize only what is needed.
     - If incorrect:
@@ -111,6 +112,12 @@ async function generateFeedback(apiKey: string, modelName: string, prompt: strin
 
 export async function POST(req: NextRequest) {
   try {
+
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Missing GOOGLE_API_KEY' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
+    }
+
     const { session_id, user_answer } = Body.parse(await req.json());
 
     const { data: session, error: sErr } = await supabase
@@ -148,21 +155,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const is_correct = Number(user_answer) === Number(session.correct_answer);
-
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Missing GOOGLE_API_KEY' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
-    }
-
+    const userAnswer = Number(user_answer)
+    const correctAnswer = Number(session.correct_answer);
+    const is_correct = userAnswer === correctAnswer;
     const client_id = getOrCreateClientId();
+    const feedback = buildFeedbackPrompt(session.problem_text, correctAnswer, userAnswer, is_correct);
 
     const [feedback_text, existingScore] = await Promise.all([
       generateFeedback(
         apiKey,
         MODEL,
-        buildFeedbackPrompt(session.problem_text, Number(session.correct_answer), Number(user_answer), is_correct),
-        Number(session.correct_answer)
+        feedback,
+        correctAnswer
       ),
       supabase
         .from('score_summaries')

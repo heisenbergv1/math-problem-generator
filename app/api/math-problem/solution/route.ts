@@ -138,11 +138,11 @@ export async function POST(req: NextRequest) {
 
       OUTPUT REQUIREMENTS (STRICT):
       - Return JSON only. No backticks, no code fences, no extra text.
-      - Schema exactly:
-      {"steps": ["Step 1 ...", "Step 2 ...", "...", "Final answer: <number>"]}
+      - Schema exactly: {"steps": ["Step 1 ...", "Step 2 ...", "...", "Final answer: <number>"]}
       - "steps" must be an array of 3–15 short strings (no markdown).
 
       CONTENT RULES:
+      - DO NOT USE LATEX.
       - If any quantities are in fraction form, include one step showing both forms, e.g. "Convert: 3/4 = 0.75".
       - When converting to decimal, use round half-up to 2 decimal places (e.g., 1.245 → 1.25).
       - Do not reveal multiple possible answers. Choose one correct result.

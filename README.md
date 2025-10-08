@@ -128,7 +128,10 @@ Create a new API route that handles:
 3. **Supabase Credentials**:
    ```
    SUPABASE_URL: https://fyudwcsgploehkstpnpi.supabase.co
+
    SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5dWR3Y3NncGxvZWhrc3RwbnBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NTYzNDAsImV4cCI6MjA3NTMzMjM0MH0.i6kW96zwi1e9CkF3PUHwTgaXMmuu_pX1hHbgQVTUAto
+
+   GOOGLE_MODEL=gemini-2.0-flash
    ```
 
 ## Implementation Notes

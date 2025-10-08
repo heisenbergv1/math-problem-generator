@@ -114,6 +114,7 @@ export async function POST(req: NextRequest) {
       - One short paragraph (<= 80 words), self-contained, culturally neutral.
       - Use numbers and units suitable for Primary 5; avoid exotic contexts and multi-topic mashups.
       - Do not include code fences or commentary.
+      - DO NOT USE LATEX.
 
       OUTPUT REQUIREMENTS (STRICT; JSON ONLY, no extra text):
       {
