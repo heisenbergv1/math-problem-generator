@@ -142,6 +142,9 @@ export function ProblemDisplay({
       )}
 
       <form onSubmit={submitAnswer} className="space-y-4">
+        <div className="mt-3 text-sm text-blue-900/80">
+          Always round up to 2 decimal places for non-integer answers (e.g., 3.14).
+        </div>
         <div>
           <label htmlFor="answer" className="block text-sm font-medium text-gray-700 mb-2">
             Your Answer:

@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const { data: session, error: sErr } = await supabase
       .from('math_problem_sessions')
-      .select('id, problem_text, correct_answer, difficulty, problem_type, revealed_at')
+      .select('id, problem_text, difficulty, problem_type, revealed_at')
       .eq('id', session_id)
       .single()
 
@@ -65,14 +65,31 @@ export async function POST(req: NextRequest) {
     const model = genAI.getGenerativeModel({ model: MODEL })
 
     const prompt = `
-      You are a friendly Primary 5 teacher. Provide a short step-by-step solution for the following problem with clear, simple steps and the final answer at the end.
+      You are a friendly Primary 5 (Grade 5) teacher. Provide a short step-by-step solution for the problem below using clear, simple steps and ending with a single numeric final answer.
 
       Problem:
       ${session.problem_text}
 
-      Output JSON only:
+      OUTPUT REQUIREMENTS (STRICT):
+      - Return JSON only. No backticks, no code fences, no extra text.
+      - Schema exactly:
       {"steps": ["Step 1 ...", "Step 2 ...", "...", "Final answer: <number>"]}
-      Keep it concise (3-8 steps). Avoid extra commentary outside JSON.
+      - "steps" must be an array of 3–9 short strings (no markdown).
+
+      CONTENT RULES:
+      - If any quantities are in fraction form, include one step showing both forms, e.g. "Convert: 3/4 = 0.75".
+      - When converting to decimal, use round half-up to 2 decimal places (e.g., 1.245 → 1.25).
+      - Do not reveal multiple possible answers. Choose one correct result.
+      - Do not repeat the full problem text in the steps.
+      - Keep each step short and actionable (<=160 characters).
+
+      FINAL ANSWER FORMAT:
+      - "Final answer: <number>"
+      - If the result is an integer, output it without decimals (e.g., 15).
+      - Otherwise output exactly two decimal places (e.g., 12.50), using round half-up.
+      - Do not include units or words after the number.
+
+      Return only the JSON object described above.
       `
 
     const resp = await model.generateContent(prompt)
@@ -86,13 +103,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'AI did not return steps' }, { status: 502 })
     }
 
-    if (!session.revealed_at) {
-      const { error: updErr } = await supabase
-        .from('math_problem_sessions')
-        .update({ revealed_at: new Date().toISOString() })
-        .eq('id', session_id)
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
-    }
+    // if (!session.revealed_at) {
+    //   const { error: updErr } = await supabase
+    //     .from('math_problem_sessions')
+    //     .update({ revealed_at: new Date().toISOString() })
+    //     .eq('id', session_id)
+    //   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+    // }
 
     const { data: saved, error: iErr } = await supabase
       .from('math_problem_solutions')
@@ -109,9 +126,23 @@ export async function POST(req: NextRequest) {
         .select('id, steps')
         .eq('session_id', session_id)
         .maybeSingle()
-      if (retry?.steps) return NextResponse.json({ steps: retry.steps })
+      if (retry?.steps) {
+        const { error: updErrRetry } = await supabase
+          .from('math_problem_sessions')
+          .update({ revealed_at: new Date().toISOString() })
+          .eq('id', session_id)
+        if (updErrRetry) return NextResponse.json({ error: updErrRetry.message }, { status: 500 })
+        return NextResponse.json({ steps: retry.steps })
+      }
       return NextResponse.json({ error: iErr.message }, { status: 500 })
     }
+
+    const { error: updErr } = await supabase
+      .from('math_problem_sessions')
+      .update({ revealed_at: new Date().toISOString() })
+      .eq('id', session_id)
+
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
     return NextResponse.json({ steps: saved.steps })
   } catch (e: any) {

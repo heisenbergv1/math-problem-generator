@@ -67,7 +67,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Your Task
+## TODO
 
 ### 1. Implement Frontend Logic (`app/page.tsx`)
 

@@ -14,17 +14,18 @@ export type Score = {
 interface ScoreDisplayProps {
   score: Score;
 }
+
 export function ScoreDisplay({
   score
 }: ScoreDisplayProps) {
-  if (!score) return null;
+  // if (!score) return null;
   return <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
     <div className="rounded-lg bg-white p-4 shadow-md border border-indigo-100 transition-transform hover:transform hover:scale-105">
       <div className="flex items-center gap-2 mb-1 text-indigo-600">
         <TrendingUpIcon size={16} />
         <div className="text-xs font-medium uppercase">Points</div>
       </div>
-      <div className="text-2xl font-bold text-gray-800">{score.points}</div>
+      <div className="text-2xl font-bold text-gray-800">{score?.points}</div>
     </div>
     <div className="rounded-lg bg-white p-4 shadow-md border border-indigo-100 transition-transform hover:transform hover:scale-105">
       <div className="flex items-center gap-2 mb-1 text-green-600">
@@ -32,7 +33,7 @@ export function ScoreDisplay({
         <div className="text-xs font-medium uppercase">Accuracy</div>
       </div>
       <div className="text-2xl font-bold text-gray-800">
-        {score.accuracy}%
+        {score?.accuracy}%
       </div>
     </div>
     <div className="rounded-lg bg-white p-4 shadow-md border border-indigo-100 transition-transform hover:transform hover:scale-105">
@@ -41,7 +42,7 @@ export function ScoreDisplay({
         <div className="text-xs font-medium uppercase">Streak</div>
       </div>
       <div className="text-2xl font-bold text-gray-800">
-        {score.current_streak}
+        {score?.current_streak}
       </div>
     </div>
     <div className="rounded-lg bg-white p-4 shadow-md border border-indigo-100 transition-transform hover:transform hover:scale-105">
@@ -50,7 +51,7 @@ export function ScoreDisplay({
         <div className="text-xs font-medium uppercase">Best</div>
       </div>
       <div className="text-2xl font-bold text-gray-800">
-        {score.best_streak}
+        {score?.best_streak}
       </div>
     </div>
   </div>;

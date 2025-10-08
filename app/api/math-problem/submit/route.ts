@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // console.log('[INFO] User answer:', user_answer, 'Correct answer:', session.correct_answer);
+
     const is_correct = Number(user_answer) === Number(session.correct_answer);
 
     const apiKey = process.env.GOOGLE_API_KEY;
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
     const model = genAI.getGenerativeModel({ model: MODEL });
 
     const feedbackPrompt = `
-      Provide brief, encouraging feedback for a Primary 5 student.
+      You are giving feedback to a Primary 5 (Grade 5) student. Be kind, specific, and short.
 
       Problem:
       """${session.problem_text}"""
@@ -82,10 +84,26 @@ export async function POST(req: NextRequest) {
       Student answer: ${user_answer}
       Result: ${is_correct ? 'correct' : 'incorrect'}
 
-      Rules:
-      - If incorrect: suggest the likely mistake and outline a short correct method (2–4 sentences).
-      - If correct: praise, rephrase the problem & correct answer; then suggest one small next step (1–2 sentences); strictly do not ask another question.
-      Return plain text only.
+      OUTPUT:
+      - Return PLAIN TEXT only. No code blocks, no LaTeX, no lists, no emojis.
+      - Use simple words a Primary 5 student understands.
+
+      CONTENT RULES:
+      - Stay faithful to the numbers given above. Do not invent or change quantities.
+      - Do not restate the full problem; summarize only what is needed.
+      - If incorrect:
+        - In 2–4 short sentences, point out the most likely mistake or missing step.
+        - Give a tiny nudge on the correct method (e.g., which operation/order to use, or how to set it up).
+        - Do NOT reveal the final numeric answer.
+      - If correct:
+        - In 1–2 short sentences, praise and briefly restate the key idea and the correct result.
+        - Add exactly one concrete next-step tip (e.g., “try with a bigger number” or “now mix multiplication and division”).
+        - Do NOT ask a question and do NOT give a new problem.
+
+      STYLE:
+      - Keep sentences short and clear.
+      - Avoid technical jargon unless needed; explain it simply if used.
+      - 3–5 sentences total.
       `;
 
     const feedbackResp = await model.generateContent(feedbackPrompt);

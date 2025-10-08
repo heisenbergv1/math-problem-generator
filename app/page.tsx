@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { TrophyIcon, BrainIcon } from 'lucide-react'
 import { ScoreDisplay } from '@/components/ScoreDisplay'
 import { ProblemDisplay } from '@/components/ProblemDisplay'
@@ -25,7 +25,24 @@ type Score = {
   accuracy: number
 } | null
 
+const MAX_HINTS = 5
+const SCORE_ENDPOINT = '/api/score'
+const GENERATE_ENDPOINT = '/api/math-problem'
+const HINT_ENDPOINT = '/api/math-problem/hint'
+const SUBMIT_ENDPOINT = '/api/math-problem/submit'
+const STORAGE_KEY = 'mpg_session_v1'
+const SCORE_DEFAULT = {
+  client_id: "",
+  total_attempts: 0,
+  correct_count: 0,
+  current_streak: 0,
+  best_streak: 0,
+  points: 0,
+  accuracy: 0,
+}
+
 export default function Home() {
+  const [isPending, startTransition] = useTransition()
   const [problem, setProblem] = useState<MathProblem | null>(null)
   const [userAnswer, setUserAnswer] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -36,83 +53,148 @@ export default function Home() {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium')
   const [problemType, setProblemType] = useState<ProblemType>('addition')
-  const [score, setScore] = useState<Score>(null)
+  const [score, setScore] = useState<Score>(SCORE_DEFAULT)
   const [hints, setHints] = useState<string[]>([])
   const [isHintLoading, setIsHintLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [modalMessage, setModalMessage] = useState('')
   const [modalTitle, setModalTitle] = useState('')
 
-  useEffect(() => {
-    fetch('/api/score', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(j => setScore(j.score ?? null))
-      .catch(() => {})
+  const abortRefs = useRef<AbortController[]>([])
+
+  const addAborter = useCallback((c: AbortController) => {
+    abortRefs.current.push(c)
+  }, [])
+
+  const abortAll = useCallback(() => {
+    abortRefs.current.forEach(c => c.abort())
+    abortRefs.current = []
+  }, [])
+
+  const fetchWithRetry = useCallback(async (input: RequestInfo | URL, init?: RequestInit, retries = 2, backoff = 400): Promise<Response> => {
+    let attempt = 0
+    let lastErr: any
+    while (attempt <= retries) {
+      try {
+        const res = await fetch(input, init)
+        if (!res.ok && res.status >= 500) throw new Error(`Server error ${res.status}`)
+        return res
+      } catch (e: any) {
+        lastErr = e
+        if (attempt === retries) break
+        await new Promise(r => setTimeout(r, backoff * Math.pow(2, attempt)))
+        attempt++
+      }
+    }
+    throw lastErr
   }, [])
 
   useEffect(() => {
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setShowModal(false)
-      }
-    }
-    if (showModal) window.addEventListener('keydown', onEsc)
-    return () => window.removeEventListener('keydown', onEsc)
-  }, [showModal])
+    const c = new AbortController()
+    addAborter(c)
+    fetchWithRetry(SCORE_ENDPOINT, { cache: 'no-store', signal: c.signal }).then(r => r.json()).then(j => setScore(j.score ?? null)).catch(() => {})
+    return abortAll
+  }, [addAborter, abortAll, fetchWithRetry])
 
-  const generateProblem = async () => {
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) return
+      const saved = JSON.parse(raw)
+      if (saved && typeof saved === 'object') {
+        setProblem(saved.problem ?? null)
+        setSessionId(saved.sessionId ?? null)
+        setUserAnswer(saved.userAnswer ?? '')
+        setHints(Array.isArray(saved.hints) ? saved.hints.slice(0, MAX_HINTS) : [])
+        setIsSubmitDisabled(saved.isSubmitDisabled ?? null)
+        setIsCorrect(saved.isCorrect ?? null)
+        setFeedback(saved.feedback ?? '')
+        setDifficulty(saved.difficulty ?? 'Medium')
+        setProblemType(saved.problemType ?? 'addition')
+      }
+    } catch {}
+  }, [])
+
+  const persisted = useMemo(() => ({
+    problem, sessionId, userAnswer, hints, isSubmitDisabled, isCorrect, feedback, difficulty, problemType
+  }), [problem, sessionId, userAnswer, hints, isSubmitDisabled, isCorrect, feedback, difficulty, problemType])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted))
+    } catch {}
+  }, [persisted])
+
+  const handleEsc = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') setShowModal(false)
+  }, [])
+
+  useEffect(() => {
+    if (showModal) window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [showModal, handleEsc])
+
+  const generateProblem = useCallback(async () => {
+    abortAll()
+    const c = new AbortController()
+    addAborter(c)
     setIsLoadingSettingsPanel(true)
     setFeedback('')
     setIsCorrect(null)
     setUserAnswer('')
     setHints([])
     try {
-      const res = await fetch('/api/math-problem', {
+      const res = await fetchWithRetry(GENERATE_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty, problem_type: problemType })
-      })
+        body: JSON.stringify({ difficulty, problem_type: problemType }),
+        signal: c.signal
+      }, 2, 400)
       const data = await res.json()
-      // if (!res.ok) throw new Error(data.error || 'Something went wrong while generating.')
       if (!res.ok) throw new Error('Something went wrong while generating. Please try again later.')
-      setIsSubmitDisabled(false)
-      setSessionId(data.session_id)
-      setProblem({ problem_text: data.problem_text })
+      startTransition(() => {
+        setIsSubmitDisabled(false)
+        setSessionId(data.session_id)
+        setProblem({ problem_text: data.problem_text })
+      })
     } catch (err: any) {
-      setFeedback(err.message ?? 'Something went wrong while generating.')
+      setFeedback(err?.message ?? 'Something went wrong while generating.')
       setIsCorrect(false)
     } finally {
       setIsLoadingSettingsPanel(false)
     }
-  }
+  }, [difficulty, problemType, abortAll, addAborter, fetchWithRetry, startTransition])
 
-  const requestHint = async () => {
+  const requestHint = useCallback(async () => {
     if (!sessionId) return
-    if (hints.length >= 5) return
+    if (hints.length >= MAX_HINTS) return
+    const c = new AbortController()
+    addAborter(c)
     setIsHintLoading(true)
     try {
-      const res = await fetch('/api/math-problem/hint', {
+      const res = await fetchWithRetry(HINT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
           user_answer: userAnswer ? Number(userAnswer) : undefined
-        })
-      })
+        }),
+        signal: c.signal
+      }, 2, 300)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to get hint')
       const nextHints = [...hints, String(data.hint_text ?? '')]
-      setHints(nextHints.slice(0, 5))
+      setHints(nextHints.slice(0, MAX_HINTS))
       if (data.score) setScore(data.score)
     } catch (e: any) {
-      const nextHints = [...hints, e.message ?? 'Unable to get a hint right now.']
-      setHints(nextHints.slice(0, 5))
+      const nextHints = [...hints, e?.message ?? 'Unable to get a hint right now.']
+      setHints(nextHints.slice(0, MAX_HINTS))
     } finally {
       setIsHintLoading(false)
     }
-  }
+  }, [sessionId, hints, userAnswer, addAborter, fetchWithRetry])
 
-  const submitAnswer = async (e: React.FormEvent) => {
+  const submitAnswer = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!sessionId) return
     if (isCorrect === true) {
@@ -121,15 +203,18 @@ export default function Home() {
       setShowModal(true)
       return
     }
+    const c = new AbortController()
+    addAborter(c)
     setIsLoadingSubmit(true)
     setFeedback('')
     setIsCorrect(null)
     try {
-      const res = await fetch('/api/math-problem/submit', {
+      const res = await fetchWithRetry(SUBMIT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, user_answer: Number(userAnswer) })
-      })
+        body: JSON.stringify({ session_id: sessionId, user_answer: Number(userAnswer) }),
+        signal: c.signal
+      }, 2, 400)
       const data = await res.json()
       if (res.status === 409 && data?.error === 'already_solved') {
         setIsCorrect(true)
@@ -159,11 +244,28 @@ export default function Home() {
       if (data.score) setScore(data.score)
     } catch (err: any) {
       setIsCorrect(false)
-      setFeedback(err.message ?? 'Something went wrong while submitting.')
+      setFeedback(err?.message ?? 'Something went wrong while submitting.')
     } finally {
       setIsLoadingSubmit(false)
     }
-  }
+  }, [sessionId, isCorrect, userAnswer, addAborter, fetchWithRetry])
+
+  const handleOverlayClick = useCallback(() => {
+    setShowModal(false)
+  }, [])
+
+  const handleDialogClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+  }, [])
+
+  const handleSolutionRevealed = useCallback(() => {
+    setIsSubmitDisabled(true)
+    setModalTitle('Solution Revealed')
+    setModalMessage('You revealed the solution steps. Submissions are disabled for this problem. Generate a new one to continue.')
+    if (!isCorrect) setShowModal(true)
+  }, [isCorrect])
+
+  const showRightPaneSkeleton = useMemo(() => isLoadingSettingsPanel || isPending, [isLoadingSettingsPanel, isPending])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-indigo-50">
@@ -178,7 +280,7 @@ export default function Home() {
           <p className="text-gray-600">Challenge yourself with math problems!</p>
         </header>
 
-        {score && <ScoreDisplay score={score} />}
+        <ScoreDisplay score={score} />
 
         <div className="flex flex-col md:flex-row gap-6">
           <div className="w-full md:w-1/3 md:h-96 md:overflow-y-auto md:min-h-0">
@@ -193,7 +295,14 @@ export default function Home() {
           </div>
 
           <div className="w-full md:w-2/3 flex flex-col">
-            {problem ? (
+            {showRightPaneSkeleton ? (
+              <div className="bg-white rounded-lg shadow-lg p-8 border border-indigo-100 h-96 animate-pulse">
+                <div className="h-6 w-40 bg-indigo-100 rounded mb-4" />
+                <div className="h-6 w-64 bg-indigo-100 rounded mb-2" />
+                <div className="h-24 w-full bg-indigo-50 rounded mb-6" />
+                <div className="h-10 w-40 bg-indigo-100 rounded" />
+              </div>
+            ) : problem ? (
               <>
                 <ProblemDisplay
                   problem={problem}
@@ -207,22 +316,18 @@ export default function Home() {
                   isCorrect={isCorrect}
                   isDisabled={isSubmitDisabled}
                   sessionId={sessionId ?? ''}
-                  onSolutionRevealed={() => {
-                    setIsSubmitDisabled(true)
-                    setModalTitle('Solution Revealed')
-                    setModalMessage('You revealed the solution steps. Submissions are disabled for this problem. Generate a new one to continue.')
-                    if (!isCorrect) setShowModal(true)
-                  }}
+                  onSolutionRevealed={handleSolutionRevealed}
                 />
 
-                {!isSubmitDisabled ?
+                {!isSubmitDisabled ? (
                   <HintDisplay
                     hints={hints}
                     isHintLoading={isHintLoading}
                     requestHint={requestHint}
                     sessionId={sessionId}
-                    maxHints={5}
-                  /> : null}
+                    maxHints={MAX_HINTS}
+                  />
+                ) : null}
               </>
             ) : (
               <div className="bg-white rounded-lg shadow-lg p-8 border border-indigo-100 text-center flex flex-col items-center justify-center h-96">
@@ -240,12 +345,13 @@ export default function Home() {
           </div>
         </div>
 
-        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${showModal ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-          onClick={() => setShowModal(false)}
+        <div
+          className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${showModal ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+          onClick={handleOverlayClick}
         >
           <div
             className={`w-[90vw] max-w-md rounded-2xl border border-emerald-200/70 bg-emerald-50/95 shadow-2xl ring-1 ring-emerald-100/60 transition-all duration-300 ease-out transform ${showModal ? 'opacity-100 scale-100 animate-pop' : 'opacity-0 scale-95'}`}
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleDialogClick}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
@@ -268,7 +374,7 @@ export default function Home() {
             </div>
             <div className="flex items-center justify-end gap-2 p-6 pt-4">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={handleOverlayClick}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-white font-semibold shadow hover:shadow-md transition-all duration-200 hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 active:scale-[0.98]"
               >
                 OK
