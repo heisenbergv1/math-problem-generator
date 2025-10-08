@@ -49,13 +49,13 @@ function buildFeedbackPrompt(problem_text: string, correct: number, user: number
     - DO NOT USE LATEX.
     - Stay faithful to the numbers given above. Do not invent or change quantities.
     - Do not restate the full problem; summarize only what is needed.
-    - If incorrect:
+    - If Result is "incorrect":
       - In 2–4 short sentences, point out the most likely mistake or missing step.
       - Give a tiny nudge on the correct method.
       - Do NOT reveal the final numeric answer.
-    - If correct:
-      - In 1–2 short sentences, praise and briefly restate the key idea and the correct result.
-      - Add exactly one concrete next-step tip.
+    - If Result is "correct":
+      - In 1–2 short sentences, say ${correct} is correct, then praise and briefly restate the key idea, the solution and the correct result.
+      - Add exactly one concrete next level tip.
       - Do NOT ask a question and do NOT give a new problem.
 
     STYLE:
@@ -78,6 +78,9 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/**
+ * @deprecated
+ */
 function redactAnswer(text: string, correct: number): string {
   const intForm = Number.isInteger(correct) ? String(correct) : String(Math.trunc(correct));
   const twoDpForm = (Math.round(correct * 100) / 100).toFixed(2);
@@ -87,13 +90,16 @@ function redactAnswer(text: string, correct: number): string {
   return text.replace(re, '[redacted]');
 }
 
+/**
+ * @deprecated
+ */
 function sanitizeFeedback(s: string, correct: number): string {
   const stripped = s.replace(/`{3,}[\s\S]*?`{3,}/g, '').replace(/\s+\n/g, '\n').trim();
   const redacted = redactAnswer(stripped, correct);
   return redacted.length > FEEDBACK_MAX_LEN ? redacted.slice(0, FEEDBACK_MAX_LEN).trim() : redacted;
 }
 
-async function generateFeedback(apiKey: string, modelName: string, prompt: string, correct: number): Promise<string> {
+async function generateFeedback(apiKey: string, modelName: string, prompt: string, isCorrect: boolean): Promise<string> {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
 
@@ -102,13 +108,19 @@ async function generateFeedback(apiKey: string, modelName: string, prompt: strin
     try {
       const resp = await withTimeout(model.generateContent(prompt), FEEDBACK_TIMEOUT_MS);
       const text = resp.response.text().trim();
-      if (text) return sanitizeFeedback(text, correct);
+      if (text) return text;
     } catch (e: any) {
       lastErr = e;
     }
   }
-  return 'Thanks for your effort. Review your steps and check the operations carefully. Try again using the main idea from the question.';
+
+  const message = isCorrect 
+    ? 'Well done on getting the correct answer! Keep up the great work and continue practicing to strengthen your skills.' 
+    : 'Keep trying! Review your calculations and consider where you might have gone wrong. Practice makes perfect, so don\'t give up!';
+
+  return message;
 }
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -166,7 +178,7 @@ export async function POST(req: NextRequest) {
         apiKey,
         MODEL,
         feedback,
-        correctAnswer
+        is_correct
       ),
       supabase
         .from('score_summaries')
