@@ -1,9 +1,10 @@
-// app\history\page.tsx
+// app/history/page.tsx
 
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type Submission = {
   id: string;
@@ -29,20 +30,6 @@ type HistoryItem = {
   submissions?: Submission[];
 };
 
-async function getHistory() {
-  // If running on Vercel, leave empty and rely on relative fetch in client components.
-  // In a server component, relative works too since Next maps it.
-  // For absolute robustness across envs, you can set NEXT_PUBLIC_BASE_URL.
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ''}/api/history`, {
-    cache: 'no-store'
-  });
-  if (!res.ok) {
-    throw new Error('Failed to load history');
-  }
-  const data = await res.json();
-  return (data.items ?? []) as HistoryItem[];
-}
-
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
   month: 'short',
@@ -51,15 +38,83 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit'
 });
 
-export default async function HistoryPage() {
-  let items: HistoryItem[] = [];
-  let errorMessage: string | null = null;
-
-  try {
-    items = await getHistory();
-  } catch (e: any) {
-    errorMessage = e?.message ?? 'Unknown error while loading history.';
+async function fetchWithRetry(url: string, init: RequestInit, retries = 2, delayMs = 400) {
+  let err: unknown = null;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (!res.ok) throw new Error('Failed to load history');
+      return res.json();
+    } catch (e) {
+      err = e;
+      if (i < retries) {
+        await new Promise(r => setTimeout(r, delayMs * Math.pow(2, i)));
+        continue;
+      }
+      throw err;
+    }
   }
+  throw err;
+}
+
+async function getHistory() {
+  const data = await fetchWithRetry(`${process.env.NEXT_PUBLIC_BASE_URL ?? ''}/api/history`, { cache: 'no-store' });
+  return (data.items ?? []) as HistoryItem[];
+}
+
+function HistorySkeleton() {
+  return (
+    <div className="mt-6 space-y-4">
+      {[0,1,2].map(i => (
+        <div key={i} className="rounded-xl border bg-white p-5 shadow-md">
+          <div className="h-4 w-32 bg-slate-200 rounded mb-3" />
+          <div className="h-5 w-3/4 bg-slate-200 rounded" />
+          <div className="h-16 w-full bg-slate-100 rounded mt-3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function HistoryPage() {
+  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getHistory();
+        if (mounted) {
+          setItems(data);
+          setErrorMessage(null);
+        }
+      } catch (e: any) {
+        if (mounted) setErrorMessage(e?.message ?? 'Unknown error while loading history.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const itemsView = useMemo(() => {
+    return items.map(it => ({
+      ...it,
+      createdAtLabel: dateFormatter.format(new Date(it.created_at)),
+      lastSubmission: it.last_submission
+        ? {
+            ...it.last_submission,
+            createdAtLabel: dateFormatter.format(new Date(it.last_submission.created_at))
+          }
+        : null,
+      submissionsView: (it.submissions ?? []).map(s => ({
+        ...s,
+        createdAtLabel: dateFormatter.format(new Date(s.created_at))
+      }))
+    }));
+  }, [items]);
 
   return (
     <main className="min-h-dvh bg-gradient-to-b from-blue-50 to-indigo-50">
@@ -86,100 +141,107 @@ export default async function HistoryPage() {
           </div>
         )}
 
-        <div className="mt-6 space-y-4">
-          {items.length === 0 && !errorMessage && (
-            <div className="rounded-lg border bg-white p-6 text-gray-600">
-              No history yet. Generate a problem and come back.
-            </div>
-          )}
-
-          {items.map((it) => (
-            <div key={it.id} className="rounded-xl border bg-white p-5 shadow-md hover:shadow-lg transition-shadow">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm text-gray-500">
-                  {dateFormatter.format(new Date(it.created_at))}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
-                    {it.difficulty}
-                  </span>
-                  {it.has_submission ? (
-                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${it.last_submission?.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                      {it.last_submission?.is_correct ? 'Last: Correct' : 'Last: Try again'}
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                      No submissions
-                    </span>
-                  )}
-                </div>
+        {loading ? (
+          <HistorySkeleton />
+        ) : (
+          <div className="mt-6 space-y-4">
+            {itemsView.length === 0 && !errorMessage && (
+              <div className="rounded-lg border bg-white p-6 text-gray-600">
+                No history yet. Generate a problem and come back.
               </div>
+            )}
 
-              <p className="mt-3 text-gray-900">{it.problem_text}</p>
+            {itemsView.map((it) => (
+              <div key={it.id} className="rounded-xl border bg-white p-5 shadow-md hover:shadow-lg transition-shadow">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm text-gray-500">
+                    {it.createdAtLabel}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                      {it.difficulty}
+                    </span>
+                    {it.has_submission ? (
+                      <span className={`rounded-full px-3 py-1 text-xs font-medium ${it.lastSubmission?.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {it.lastSubmission?.is_correct ? 'Last: Correct' : 'Last: Try again'}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                        No submissions
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-              {it.last_submission && (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-sm text-gray-700 hover:underline">
-                    View latest feedback
-                  </summary>
-                  <div className="mt-2 rounded-md bg-slate-50 p-3 text-sm text-gray-800 whitespace-pre-wrap">
-                    <div className="mb-1 text-xs text-gray-500">
-                      Answer: <strong>{it.last_submission.user_answer}</strong> · {dateFormatter.format(new Date(it.last_submission.created_at))}
+                <p className="mt-3 text-gray-900">{it.problem_text}</p>
+
+                {it.lastSubmission && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm text-gray-700 hover:underline">
+                      View latest feedback
+                    </summary>
+                    <div className="mt-2 rounded-md bg-slate-50 p-3 text-sm text-gray-800 whitespace-pre-wrap">
+                      <div className="mb-1 text-xs text-gray-500">
+                        Answer: <strong>{it.lastSubmission.user_answer}</strong> · {it.lastSubmission.createdAtLabel}
+                      </div>
+                      {it.lastSubmission.feedback_text}
                     </div>
-                    {it.last_submission.feedback_text}
-                  </div>
-                </details>
-              )}
+                  </details>
+                )}
 
-              {(it.submissions?.length ?? 0) > 0 && (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-sm text-gray-700 hover:underline">
-                    View all attempts ({it.submissions?.length})
-                  </summary>
-                  <div className="mt-2 overflow-hidden rounded-md border">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-slate-600">
-                        <tr>
-                          <th className="px-3 py-2 text-left w-48">When</th>
-                          <th className="px-3 py-2 text-left">Answer</th>
-                          <th className="px-3 py-2 text-left">Result</th>
-                          <th className="px-3 py-2 text-left">Feedback</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {it.submissions!.map((s) => (
-                          <tr key={s.id} className="border-t">
-                            <td className="px-3 py-2">{dateFormatter.format(new Date(s.created_at))}</td>
-                            <td className="px-3 py-2">{s.user_answer}</td>
-                            <td className="px-3 py-2">
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {s.is_correct ? 'Correct' : 'Incorrect'}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-slate-700 whitespace-pre-wrap">{s.feedback_text}</td>
+                {(it.submissionsView.length ?? 0) > 0 && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm text-gray-700 hover:underline">
+                      View all attempts ({it.submissionsView.length})
+                    </summary>
+                    <div className="mt-2 overflow-hidden rounded-md border">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-slate-50 text-slate-600">
+                          <tr>
+                            <th className="px-3 py-2 text-left w-48">When</th>
+                            <th className="px-3 py-2 text-left">Answer</th>
+                            <th className="px-3 py-2 text-left">Result</th>
+                            <th className="px-3 py-2 text-left">Feedback</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-              )}
-            </div>
-          ))}
-        </div>
+                        </thead>
+                        <tbody>
+                          {it.submissionsView.map((s) => (
+                            <tr key={s.id} className="border-t">
+                              <td className="px-3 py-2">{s.createdAtLabel}</td>
+                              <td className="px-3 py-2">{s.user_answer}</td>
+                              <td className="px-3 py-2">
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                  {s.is_correct ? 'Correct' : 'Incorrect'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-slate-700 whitespace-pre-wrap">{s.feedback_text}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );
 }
 
 function ClearHistoryButton() {
-  
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = require('next/navigation').useRouter();
 
-  async function onConfirm() {
+  const handleOpen = useCallback(() => setOpen(true), []);
+  const handleCancel = useCallback(() => { if (!loading) setOpen(false); }, [loading]);
+  const handleOverlayClick = useCallback(() => { if (!loading) setOpen(false); }, [loading]);
+  const handleDialogClick = useCallback((e: React.MouseEvent) => { e.stopPropagation(); }, []);
+  const handleConfirm = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -193,12 +255,12 @@ function ClearHistoryButton() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [router]);
 
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="rounded-lg border border-red-200 bg-white px-4 py-2 font-semibold text-red-700 hover:bg-red-50 transition-colors"
       >
         Clear History
@@ -206,11 +268,11 @@ function ClearHistoryButton() {
 
       <div
         className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={() => !loading && setOpen(false)}
+        onClick={handleOverlayClick}
       >
         <div
           className={`w-[90vw] max-w-md rounded-2xl border border-amber-300/80 bg-amber-50/95 shadow-2xl ring-1 ring-amber-200/70 transition-all duration-300 ease-out transform ${open ? 'opacity-100 scale-100 animate-pop' : 'opacity-0 scale-95'}`}
-          onClick={(e) => e.stopPropagation()}
+          onClick={handleDialogClick}
           role="dialog"
           aria-modal="true"
           aria-labelledby="modal-title"
@@ -235,13 +297,13 @@ function ClearHistoryButton() {
           </div>
           <div className="flex items-center justify-end gap-2 p-6 pt-4">
             <button
-              onClick={() => !loading && setOpen(false)}
+              onClick={handleCancel}
               className="rounded-lg px-4 py-2 font-semibold text-gray-800 hover:bg-amber-100 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             >
               Cancel
             </button>
             <button
-              onClick={onConfirm}
+              onClick={handleConfirm}
               disabled={loading}
               className="rounded-lg bg-red-600 px-4 py-2 text-white font-semibold shadow hover:shadow-md transition-all duration-200 hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 active:scale-[0.98] disabled:opacity-60"
             >
@@ -261,4 +323,3 @@ function ClearHistoryButton() {
     </>
   );
 }
-

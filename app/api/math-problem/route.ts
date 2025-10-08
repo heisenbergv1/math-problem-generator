@@ -96,28 +96,34 @@ export async function POST(req: NextRequest) {
       }
 
       STEPS RULES:
-      - "steps" must be an array of 3–15 short strings (no markdown).
+      - "steps" is an array of short strings (no markdown).
+      - Structure = [work steps..., final step]; the FINAL step MUST be exactly: "Final answer: <number>".
+      - Work steps length target by difficulty (the counts below EXCLUDE the final step):
+        - Easy: 1–2 work steps
+        - Medium: 3–6 work steps
+        - Hard: 7–15 work steps
+      - Total steps = work steps + 1 final step. Keep each step <= 160 characters.
       - If any quantities are in fraction form, include one step showing both forms, e.g. "Convert: 3/4 = 0.75".
       - When converting to decimal, use round half-up to 2 decimal places (e.g., 1.245 → 1.25).
       - Do not repeat the full problem text in the steps.
       - Do not reveal multiple possible answers. Choose one correct result.
-      - Keep each step short and actionable (<=160 characters).
-      - THE FINAL STEP MUST BE EXACTLY "Final answer: <number>".
 
-      FINAL ANSWER FORMAT:
-      - The last step must be exactly "Final answer: <number>".
+      FINAL ANSWER FORMAT (applies to both last step and "final_answer" field):
       - If the result is an integer, output it without decimals (e.g., 15).
       - Otherwise output exactly two decimal places (e.g., 12.50), using round half-up.
-      - Do not include units or words after the number.
+      - Do not include units or extra words after the number.
 
-      Scaling by difficulty (strict; obey the line "Difficulty: ${difficulty}"):
-
+      Scaling by difficulty (strict; obey "Difficulty: ${difficulty}"):
+      - Numbers and operations must reflect the chosen difficulty and problem type.
+    
       EASY:
+      - STRICTLY FOLLOW THE OPERATION: ${problem_type}
       - Steps: 1–2.
       - Numbers: small integers 1–50 (avoid decimals and fractions).
       - STRICTLY MUST NOT include rates, fractions, percentages, multi-stage reasoning, or distracting extra data.
 
       MEDIUM:
+      - STRICTLY FOLLOW THE OPERATION: ${problem_type}
       - Steps: 2–3.
       - Numbers: 10–500 (allow one simple fraction with denominator 2, 4, 5, 10 OR one decimal to 1 dp).
       - Operations: 
@@ -126,6 +132,7 @@ export async function POST(req: NextRequest) {
       - May include a simple rate/percentage once; avoid multi-topic chains.
 
       HARD:
+      - STRICTLY FOLLOW THE OPERATION: ${problem_type}
       - Steps: 2–3 (no more than 3).
       - Numbers: up to 1 000; allow simple fractions/decimals if needed.
       - Operations: 
@@ -134,11 +141,11 @@ export async function POST(req: NextRequest) {
       - May include one distractor detail; keep arithmetic tidy (no unwieldy primes or messy remainders).
 
       Difficulty guard:
-      - If your drafted problem violates any checklist item for the chosen Difficulty, silently fix/regenerate BEFORE returning JSON so that the final version matches the Difficulty exactly.
+      - If your drafted problem violates the chosen Difficulty and Problem Type, silently fix/regenerate BEFORE returning JSON.
       - Ensure ${problem_type} is the operation pattern that leads to the solution (or naturally appears if "mixed").
 
       Uniqueness & answer:
-      - The problem must have exactly one correct numeric answer.
+      - Exactly one correct numeric answer.
       - Use a pure number unless a unit is completely obvious and standard (e.g., dollars, minutes).
 
       Return only the JSON object described above.
@@ -149,6 +156,8 @@ export async function POST(req: NextRequest) {
     const jsonText = sanitizeToStrictJson(raw);
 
     const parsedResult = Output.safeParse(JSON.parse(jsonText));
+    // console.log(parsedResult);
+
     if (!parsedResult.success) {
       return NextResponse.json({ error: 'AI JSON invalid', issues: parsedResult.error.format(), raw }, { status: 502 });
     }
